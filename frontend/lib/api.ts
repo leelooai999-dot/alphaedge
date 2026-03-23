@@ -8,6 +8,19 @@ export async function getStock(ticker: string): Promise<any> {
   return res.json();
 }
 
+export async function getStockHistory(
+  ticker: string,
+  days: number = 90
+): Promise<{ dates: string[]; prices: number[] } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks/${ticker}/history?days=${days}`);
+    if (!res.ok) throw new Error("History not found");
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function runSimulation(
   ticker: string,
   events: any[]

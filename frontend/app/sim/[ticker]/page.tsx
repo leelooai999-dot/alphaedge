@@ -9,7 +9,7 @@ import EventPanel from "@/components/EventPanel";
 import ImpactBreakdown from "@/components/ImpactBreakdown";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { getStock, runSimulation } from "@/lib/api";
+import { getStock, runSimulation, getStockHistory } from "@/lib/api";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
 
@@ -26,20 +26,36 @@ export default function SimulatorPage() {
   const [loading, setLoading] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(!!API_BASE);
 
-  // Load stock data
+  // Load stock data and historical prices
   useEffect(() => {
     const loadStock = async () => {
       if (apiAvailable) {
         try {
           const data = await getStock(ticker);
+          let historicalPrices: { date: string; price: number }[] = [];
+
+          // Fetch historical price data
+          try {
+            const history = await getStockHistory(ticker, 90);
+            if (history && history.dates && history.prices) {
+              historicalPrices = history.dates.map((d: string, i: number) => ({
+                date: d,
+                price: history.prices[i],
+              }));
+            }
+          } catch (histErr) {
+            console.log("Historical data unavailable:", histErr);
+          }
+
           setStock({
             ticker: data.ticker,
-            name: data.ticker, // API doesn't return name yet
+            name: data.name || data.ticker,
             currentPrice: data.current_price,
-            historicalPrices: [], // Will generate client-side
+            historicalPrices,
             sector: data.sector,
           });
-          // Populate related events from API
+
+          // Populate related events from API using backend event IDs
           if (data.related_events && data.related_events.length > 0 && events.length === 0) {
             const apiEvents = data.related_events
               .map((re: any) => {
@@ -78,15 +94,15 @@ export default function SimulatorPage() {
     loadStock();
   }, [ticker, apiAvailable]);
 
-  // Auto-load default event for known scenarios (mock only)
+  // Auto-load default event for known scenarios (mock only; API handles this via related_events)
   useEffect(() => {
-    if (apiAvailable) return; // API handles this
+    if (apiAvailable) return; // API handles this via related_events
     const defaults: Record<string, string[]> = {
-      CVX: ["iran-escalation"],
-      NVDA: ["chip-controls"],
-      SPY: ["fed-rate-decision"],
-      AAPL: ["china-taiwan"],
-      TSLA: ["ev-subsidy"],
+      CVX: ["iran_escalation"],
+      NVDA: ["chip_export_control"],
+      SPY: ["fed_rate_cut"],
+      AAPL: ["china_taiwan"],
+      TSLA: ["ev_subsidy"],
     };
     if (defaults[ticker] && events.length === 0) {
       const newEvents = defaults[ticker]
@@ -102,6 +118,14 @@ export default function SimulatorPage() {
     }
   }, [ticker, apiAvailable]);
 
+  // Map frontend impact (-30 to +30) to backend severity (1-10)
+  function impactToSeverity(impact: number): number {
+    // Map [-30, +30] → [1, 10], preserving sign direction via scale
+    // Center at 0 impact → severity 5.5 (middle of 1-10)
+    const normalized = (impact + 30) / 60; // 0 to 1
+    return Math.round(1 + normalized * 9);
+  }
+
   // Run simulation
   const runSim = useCallback(async () => {
     if (!stock) return;
@@ -109,15 +133,31 @@ export default function SimulatorPage() {
 
     if (apiAvailable) {
       try {
-        const apiEvents = events.map((e) => ({
-          id: e.id,
-          params: {
-            severity: e.impact / 2,
-            duration_days: e.duration,
-            rate_change_bps: e.impact * 10,
-          },
-          probability: e.probability / 100,
-        }));
+        // Map frontend events to backend format
+        const apiEvents = events.map((e) => {
+          const backendEvent: Record<string, any> = {
+            id: e.id,
+            params: {
+              severity: impactToSeverity(e.impact),
+              duration_days: e.duration,
+            },
+            probability: e.probability / 100,
+          };
+
+          // Add event-specific params based on backend event schema
+          if (e.id === "fed_rate_cut" || e.id === "fed_rate_hike") {
+            backendEvent.params.basis_points = 50;
+          }
+          if (e.id === "tariff_increase") {
+            backendEvent.params.tariff_pct = 25;
+          }
+          if (e.id === "oil_disruption") {
+            backendEvent.params.supply_cut_pct = 10;
+          }
+
+          return backendEvent;
+        });
+
         const res = await runSimulation(ticker, apiEvents);
 
         // Map backend response to frontend format
@@ -130,36 +170,88 @@ export default function SimulatorPage() {
           dates.push(d.toISOString().split("T")[0]);
         }
 
-        // Extract paths data
+        // Compute percentiles from paths_sample if available
         const paths = res.paths_sample || [];
-        const median = paths[0] || Array(days + 1).fill(res.current_price);
-        const p25 = paths[12] || median.map((v: number) => v * 0.97);
-        const p75 = paths[37] || median.map((v: number) => v * 1.03);
-        const p5 = paths[2] || median.map((v: number) => v * 0.93);
-        const p95 = paths[47] || median.map((v: number) => v * 1.07);
+        if (paths.length > 0) {
+          // Build percentile arrays from simulation paths
+          const median: number[] = [];
+          const p25: number[] = [];
+          const p75: number[] = [];
+          const p5: number[] = [];
+          const p95: number[] = [];
 
-        const breakdown = Object.entries(res.event_impact_breakdown || {}).map(
-          ([id, pct]: [string, any]) => {
-            const tmpl = EVENT_TEMPLATES.find((t) => t.id === id);
-            const dollarImpact = (pct / 100) * res.current_price;
-            return {
-              eventName: (tmpl?.emoji || "") + " " + (tmpl?.name || id),
-              impact: Math.round(dollarImpact * 100) / 100,
-              color: dollarImpact >= 0 ? "#00d4aa" : "#ff4757",
-            };
+          for (let t = 0; t <= days; t++) {
+            const values = paths.map((p: number[]) => p[t] || p[p.length - 1]).sort((a: number, b: number) => a - b);
+            const n = values.length;
+            median.push(values[Math.floor(n * 0.5)]);
+            p25.push(values[Math.floor(n * 0.25)]);
+            p75.push(values[Math.floor(n * 0.75)]);
+            p5.push(values[Math.floor(n * 0.05)]);
+            p95.push(values[Math.floor(n * 0.95)]);
           }
-        );
 
-        setResult({
-          ticker: res.ticker,
-          currentPrice: res.current_price,
-          median30d: res.median_target,
-          probProfit: Math.round(res.probability_above_current * 100),
-          maxDrawdown5p: res.current_price - res.percentile_5,
-          eventImpact: res.event_impact_usd || 0,
-          paths: { dates, median, p25, p75, p5, p95 },
-          breakdown,
-        });
+          const breakdown = Object.entries(res.event_impact_breakdown || {}).map(
+            ([id, pct]: [string, any]) => {
+              const tmpl = EVENT_TEMPLATES.find((t) => t.id === id);
+              const dollarImpact = (pct / 100) * res.current_price;
+              return {
+                eventName: (tmpl?.emoji || "") + " " + (tmpl?.name || id),
+                impact: Math.round(dollarImpact * 100) / 100,
+                color: dollarImpact >= 0 ? "#00d4aa" : "#ff4757",
+              };
+            }
+          );
+
+          setResult({
+            ticker: res.ticker,
+            currentPrice: res.current_price,
+            median30d: res.median_target,
+            probProfit: Math.round(res.probability_above_current * 100),
+            maxDrawdown5p: res.current_price - res.percentile_5,
+            eventImpact: res.event_impact_usd || 0,
+            paths: { dates, median, p25, p75, p5, p95 },
+            breakdown,
+          });
+        } else {
+          // Fallback: use backend percentile values to create constant bands
+          const currentPrice = res.current_price;
+          const median = Array(days + 1).fill(currentPrice);
+          // Linearly interpolate from current to target
+          for (let i = 1; i <= days; i++) {
+            const t = i / days;
+            median[i] = currentPrice + (res.median_target - currentPrice) * t;
+          }
+          const spread = (res.percentile_95 - res.percentile_5) / 2;
+          const qSpread = (res.percentile_75 - res.percentile_25) / 2;
+
+          const p5 = median.map((v: number, i: number) => v - spread * (1 + (i / days) * 0.3));
+          const p95 = median.map((v: number, i: number) => v + spread * (1 + (i / days) * 0.3));
+          const p25 = median.map((v: number, i: number) => v - qSpread * (1 + (i / days) * 0.3));
+          const p75 = median.map((v: number, i: number) => v + qSpread * (1 + (i / days) * 0.3));
+
+          const breakdown = Object.entries(res.event_impact_breakdown || {}).map(
+            ([id, pct]: [string, any]) => {
+              const tmpl = EVENT_TEMPLATES.find((t) => t.id === id);
+              const dollarImpact = (pct / 100) * res.current_price;
+              return {
+                eventName: (tmpl?.emoji || "") + " " + (tmpl?.name || id),
+                impact: Math.round(dollarImpact * 100) / 100,
+                color: dollarImpact >= 0 ? "#00d4aa" : "#ff4757",
+              };
+            }
+          );
+
+          setResult({
+            ticker: res.ticker,
+            currentPrice: res.current_price,
+            median30d: res.median_target,
+            probProfit: Math.round(res.probability_above_current * 100),
+            maxDrawdown5p: res.current_price - res.percentile_5,
+            eventImpact: res.event_impact_usd || 0,
+            paths: { dates, median, p25, p75, p5, p95 },
+            breakdown,
+          });
+        }
       } catch (e) {
         console.log("API simulation failed, using mock:", e);
         setApiAvailable(false);

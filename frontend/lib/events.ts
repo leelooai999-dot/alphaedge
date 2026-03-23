@@ -5,16 +5,16 @@ export interface EventTemplate {
   category: "geopolitical" | "macro" | "sector" | "custom";
   emoji: string;
   polymarketOdds: number; // 0-100
-  defaultImpact: number; // percentage impact on stock
+  defaultImpact: number; // percentage impact on stock (30-day estimate from primary sector drift)
   defaultDuration: number; // days
-  direction: "bullish" | "bearish";
+  direction: "bullish" | "bearish" | "mixed";
   description: string;
 }
 
 export interface ActiveEvent extends EventTemplate {
   probability: number; // user-adjusted, 0-100
-  duration: number; // user-adjusted, 1-180
-  impact: number; // user-adjusted
+  duration: number; // user-adjusted, 1-365
+  impact: number; // user-adjusted, -30 to +30
 }
 
 export interface StockData {
@@ -47,83 +47,212 @@ export interface SimulationResult {
   }[];
 }
 
+// All 18 backend events with IDs matching backend exactly.
+// defaultImpact is a 30-day % estimate derived from the primary sector's daily drift × 21 trading days.
+// For events where the primary sector is negative, the impact is negative (bearish).
 export const EVENT_TEMPLATES: EventTemplate[] = [
+  // ---- Geopolitical ----
   {
-    id: "iran-escalation",
-    name: "Iran-Israel Escalation",
+    id: "iran_escalation",
+    name: "Iran-Israel Conflict Escalation",
     category: "geopolitical",
     emoji: "🔴",
-    polymarketOdds: 67,
-    defaultImpact: 9.3,
+    polymarketOdds: 35,
+    defaultImpact: 7.5,    // energy drift 0.0025 × 30 = +7.5%
     defaultDuration: 30,
     direction: "bullish",
-    description: "Increased geopolitical tension in the Middle East driving oil prices higher",
+    description: "Military escalation between Iran and Israel, disrupting oil supplies and regional stability.",
   },
   {
-    id: "fed-rate-decision",
-    name: "Fed Rate Decision (June)",
-    category: "macro",
-    emoji: "🟡",
-    polymarketOdds: 82,
-    defaultImpact: 3.8,
-    defaultDuration: 45,
-    direction: "bullish",
-    description: "Expected rate cut boosting equity valuations across sectors",
-  },
-  {
-    id: "china-taiwan",
-    name: "China-Taiwan Tension",
+    id: "china_taiwan",
+    name: "China-Taiwan Tensions",
     category: "geopolitical",
     emoji: "🔵",
-    polymarketOdds: 23,
-    defaultImpact: -8.7,
-    defaultDuration: 60,
-    direction: "bearish",
-    description: "Escalating cross-strait tensions impacting tech supply chains",
-  },
-  {
-    id: "oil-disruption",
-    name: "Oil Supply Disruption",
-    category: "sector",
-    emoji: "🟠",
-    polymarketOdds: 45,
-    defaultImpact: 12.1,
-    defaultDuration: 21,
-    direction: "bullish",
-    description: "OPEC+ production cuts or shipping route disruptions",
-  },
-  {
-    id: "trump-tariffs",
-    name: "Trump Tariff Changes",
-    category: "macro",
-    emoji: "⚪",
-    polymarketOdds: 71,
-    defaultImpact: -5.2,
+    polymarketOdds: 20,
+    defaultImpact: -9.0,   // tech drift -0.003 × 30 = -9%
     defaultDuration: 90,
     direction: "bearish",
-    description: "New tariff policies affecting international trade",
+    description: "Escalating tensions or military action related to Taiwan, disrupting semiconductor supply chains.",
   },
   {
-    id: "chip-controls",
-    name: "Chip Export Controls",
+    id: "ukraine_russia",
+    name: "Ukraine-Russia Conflict Shift",
+    category: "geopolitical",
+    emoji: "🟡",
+    polymarketOdds: 50,
+    defaultImpact: 4.5,    // energy drift 0.0015 × 30 = +4.5%
+    defaultDuration: 60,
+    direction: "mixed",
+    description: "Significant escalation or de-escalation in the Ukraine-Russia conflict.",
+  },
+  {
+    id: "north_korea",
+    name: "North Korea Escalation",
+    category: "geopolitical",
+    emoji: "💣",
+    polymarketOdds: 15,
+    defaultImpact: 7.5,    // defense drift 0.0025 × 30 = +7.5%
+    defaultDuration: 14,
+    direction: "mixed",
+    description: "North Korean military provocation or nuclear test.",
+  },
+
+  // ---- Macro Economic ----
+  {
+    id: "fed_rate_cut",
+    name: "Federal Reserve Rate Cut",
+    category: "macro",
+    emoji: "📉",
+    polymarketOdds: 70,
+    defaultImpact: 4.5,    // tech drift 0.0015 × 30 = +4.5%
+    defaultDuration: 180,
+    direction: "bullish",
+    description: "Fed cuts interest rates, easing financial conditions.",
+  },
+  {
+    id: "fed_rate_hike",
+    name: "Federal Reserve Rate Hike",
+    category: "macro",
+    emoji: "📈",
+    polymarketOdds: 20,
+    defaultImpact: -4.5,   // tech drift -0.0015 × 30 = -4.5%
+    defaultDuration: 180,
+    direction: "bearish",
+    description: "Fed raises interest rates, tightening financial conditions.",
+  },
+  {
+    id: "recession",
+    name: "US Recession",
+    category: "macro",
+    emoji: "🦇",
+    polymarketOdds: 30,
+    defaultImpact: -6.0,   // tech/real_estate drift -0.002 × 30 = -6%
+    defaultDuration: 365,
+    direction: "bearish",
+    description: "Economic contraction with rising unemployment and falling GDP.",
+  },
+  {
+    id: "inflation_spike",
+    name: "Inflation Spike",
+    category: "macro",
+    emoji: "🔥",
+    polymarketOdds: 25,
+    defaultImpact: -3.0,   // consumer drift -0.001 × 30 = -3%
+    defaultDuration: 120,
+    direction: "mixed",
+    description: "Unexpected surge in inflation, pressuring the Fed to tighten.",
+  },
+  {
+    id: "tariff_increase",
+    name: "Broad Tariff Increase",
+    category: "macro",
+    emoji: "⚪",
+    polymarketOdds: 55,
+    defaultImpact: -7.5,   // semiconductor drift -0.0025 × 30 = -7.5%
+    defaultDuration: 90,
+    direction: "bearish",
+    description: "Significant increase in trade tariffs, particularly US-China.",
+  },
+
+  // ---- Sector / Commodity ----
+  {
+    id: "oil_disruption",
+    name: "Major Oil Supply Disruption",
+    category: "sector",
+    emoji: "🟠",
+    polymarketOdds: 25,
+    defaultImpact: 12.0,   // energy drift 0.004 × 30 = +12%
+    defaultDuration: 60,
+    direction: "bullish",
+    description: "Significant disruption to global oil supply (OPEC, war, infrastructure).",
+  },
+  {
+    id: "chip_export_control",
+    name: "Semiconductor Export Controls",
     category: "sector",
     emoji: "🟣",
-    polymarketOdds: 58,
-    defaultImpact: -12.4,
-    defaultDuration: 60,
+    polymarketOdds: 60,
+    defaultImpact: -10.5,  // semiconductor drift -0.0035 × 30 = -10.5%
+    defaultDuration: 365,
     direction: "bearish",
-    description: "Expanded semiconductor export restrictions",
+    description: "New US restrictions on semiconductor exports, especially to China.",
   },
   {
-    id: "ev-subsidy",
+    id: "ev_subsidy",
     name: "EV Subsidy Change",
     category: "sector",
     emoji: "🟢",
-    polymarketOdds: 39,
-    defaultImpact: -9.3,
+    polymarketOdds: 40,
+    defaultImpact: -4.5,   // automotive drift -0.0015 × 30 = -4.5%
     defaultDuration: 30,
     direction: "bearish",
-    description: "Potential reduction or elimination of electric vehicle tax credits",
+    description: "Changes to electric vehicle subsidies or incentives.",
+  },
+  {
+    id: "ai_regulation",
+    name: "AI Regulation Tightening",
+    category: "sector",
+    emoji: "🤖",
+    polymarketOdds: 35,
+    defaultImpact: -4.5,   // tech drift -0.0015 × 30 = -4.5%
+    defaultDuration: 30,
+    direction: "bearish",
+    description: "New government regulation on AI development or deployment.",
+  },
+  {
+    id: "defense_spending",
+    name: "Defense Spending Increase",
+    category: "sector",
+    emoji: "🛡️",
+    polymarketOdds: 45,
+    defaultImpact: 6.0,    // defense drift 0.002 × 30 = +6%
+    defaultDuration: 1095,
+    direction: "bullish",
+    description: "Major increase in defense budget due to geopolitical tensions.",
+  },
+  {
+    id: "crypto_regulation",
+    name: "Cryptocurrency Regulation",
+    category: "sector",
+    emoji: "₿",
+    polymarketOdds: 50,
+    defaultImpact: -1.0,   // tech drift -0.0003 × 30 = -0.9%
+    defaultDuration: 30,
+    direction: "mixed",
+    description: "Significant regulatory action on cryptocurrency markets.",
+  },
+  {
+    id: "pharma_breakthrough",
+    name: "Major Pharma Breakthrough",
+    category: "sector",
+    emoji: "💊",
+    polymarketOdds: 20,
+    defaultImpact: 6.0,    // healthcare drift 0.002 × 30 = +6%
+    defaultDuration: 30,
+    direction: "bullish",
+    description: "Significant pharmaceutical or biotech breakthrough.",
+  },
+  {
+    id: "supply_chain_crisis",
+    name: "Global Supply Chain Crisis",
+    category: "sector",
+    emoji: "📦",
+    polymarketOdds: 20,
+    defaultImpact: -6.0,   // automotive drift -0.002 × 30 = -6%
+    defaultDuration: 90,
+    direction: "bearish",
+    description: "Major disruption to global supply chains (port closures, shipping crisis).",
+  },
+  {
+    id: "commercial_real_estate_crisis",
+    name: "Commercial Real Estate Crisis",
+    category: "sector",
+    emoji: "🏢",
+    polymarketOdds: 40,
+    defaultImpact: -9.0,   // real_estate drift -0.003 × 30 = -9%
+    defaultDuration: 730,
+    direction: "bearish",
+    description: "Major downturn in commercial real estate valuations.",
   },
 ];
 
