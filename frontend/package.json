@@ -2,9 +2,6 @@
   "name": "alphaedge",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": "20.x"
-  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -24,6 +21,5 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5"
-  },
-  "packageManager": "npm@10.9.4"
+  }
 }
