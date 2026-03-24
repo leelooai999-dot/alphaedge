@@ -69,18 +69,23 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
       <div>
         <div className="flex justify-between text-xs mb-1">
           <span className="text-muted">Duration</span>
-          <span className="text-white font-mono">{event.duration} days</span>
+          <span className="text-white font-mono">
+            {event.duration <= 7 ? "1 wk" : event.duration <= 21 ? `${Math.round(event.duration / 7)} wks` : event.duration <= 60 ? `${Math.round(event.duration / 30)} mo` : `${Math.round(event.duration / 30)} mos"}
+          </span>
         </div>
         <input
           type="range"
           min="1"
-          max="180"
+          max="365"
           value={event.duration}
           onChange={(e) =>
             onUpdate({ ...event, duration: parseInt(e.target.value) })
           }
           className="w-full"
         />
+        <p className="text-[10px] text-neutral mt-1 leading-tight">
+          How long the event&apos;s price effect lasts. Short events (1-7d) cause sharp moves that fade. Long events (90-365d) create sustained trends.
+        </p>
       </div>
 
       {/* Impact slider */}
@@ -101,6 +106,9 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
           }
           className="w-full"
         />
+        <p className="text-[10px] text-neutral mt-1 leading-tight">
+          Expected max price move over the duration. ±5% = moderate, ±10% = significant, ±20%+ = extreme event.
+        </p>
       </div>
     </div>
   );

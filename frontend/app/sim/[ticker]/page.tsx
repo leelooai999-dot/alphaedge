@@ -10,6 +10,7 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory } from "@/lib/api";
+import SimChart, { TimeRange } from "@/components/SimChart";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
 
@@ -25,6 +26,7 @@ export default function SimulatorPage() {
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(!!API_BASE);
+  const [timeRange, setTimeRange] = useState<TimeRange>("30d");
 
   // Track last simulation request to prevent stale responses
   const simSeqRef = useRef(0);
@@ -162,7 +164,8 @@ export default function SimulatorPage() {
         return backendEvent;
       });
 
-      const days = 30;
+      const daysMap: Record<TimeRange, number> = { "7d": 7, "15d": 15, "30d": 30, "60d": 60, "90d": 90 };
+      const days = daysMap[timeRange] || 30;
       const dates: string[] = [];
       const now = new Date();
       for (let i = 0; i <= days; i++) {
@@ -270,7 +273,7 @@ export default function SimulatorPage() {
 
       setLoading(false);
     },
-    [ticker, stock, apiAvailable, events]
+    [ticker, stock, apiAvailable, events, timeRange]
   );
 
   // Debounce timer ref
@@ -283,13 +286,13 @@ export default function SimulatorPage() {
     return () => clearTimeout(timer);
   }, [stock, events.length, result, runSim]);
 
-  // Debounced re-simulation on slider changes
+  // Debounced re-simulation on slider changes or time range changes
   useEffect(() => {
     if (!stock || !result) return; // Only re-simulate after initial result exists
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => runSim(true), 500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [events, stock, result, runSim]);
+  }, [events, stock, result, runSim, timeRange]);
 
   // Clean up debounce on unmount
   useEffect(() => {
@@ -397,7 +400,7 @@ export default function SimulatorPage() {
           </div>
           <div className="lg:col-span-3 space-y-4">
             <div className="bg-card rounded-2xl border border-border p-4">
-              <SimChart stock={stock} result={result} />
+              <SimChart stock={stock} result={result} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
             </div>
             {result && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

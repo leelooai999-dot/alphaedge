@@ -27,10 +27,28 @@ interface Props {
   result: SimulationResult | null;
 }
 
-export default function SimChart({ stock, result }: Props) {
+export type TimeRange = "7d" | "15d" | "30d" | "60d" | "90d";
+
+interface Props {
+  stock: StockData;
+  result: SimulationResult | null;
+  timeRange?: TimeRange;
+  onTimeRangeChange?: (range: TimeRange) => void;
+}
+
+const TIME_RANGES: { label: string; value: TimeRange; days: number }[] = [
+  { label: "1W", value: "7d", days: 7 },
+  { label: "2W", value: "15d", days: 15 },
+  { label: "1M", value: "30d", days: 30 },
+  { label: "2M", value: "60d", days: 60 },
+  { label: "3M", value: "90d", days: 90 },
+];
+
+export default function SimChart({ stock, result, timeRange = "30d", onTimeRangeChange }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const activeRange = TIME_RANGES.find(r => r.value === timeRange) || TIME_RANGES[2];
 
   useEffect(() => {
     loadPlotly()
@@ -146,6 +164,21 @@ export default function SimChart({ stock, result }: Props) {
     const yMin = Math.min(...allYAxis) * 0.97;
     const yMax = Math.max(...allYAxis) * 1.03;
 
+    // Dynamic tick spacing based on time range
+    const rangeMs = activeRange.days * 86400000;
+    let dtick: number;
+    let tickformat: string;
+    if (rangeMs <= 7 * 86400000) {
+      dtick = 86400000; // 1 day
+      tickformat = "%a %d";
+    } else if (rangeMs <= 30 * 86400000) {
+      dtick = 604800000; // 7 days
+      tickformat = "%b %d";
+    } else {
+      dtick = 604800000 * 2; // 14 days
+      tickformat = "%b %d";
+    }
+
     const layout: any = {
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
@@ -160,8 +193,8 @@ export default function SimChart({ stock, result }: Props) {
         gridcolor: "rgba(42, 42, 74, 0.5)",
         zerolinecolor: "rgba(42, 42, 74, 0.5)",
         tickfont: { size: 10 },
-        dtick: 604800000, // 7 days in ms
-        tickformat: "%b %d",
+        dtick,
+        tickformat,
       },
       yaxis: {
         gridcolor: "rgba(42, 42, 74, 0.5)",
@@ -197,7 +230,7 @@ export default function SimChart({ stock, result }: Props) {
         window.Plotly.purge(plotRef.current);
       }
     };
-  }, [loaded, stock, result]);
+  }, [loaded, stock, result, timeRange]);
 
   if (error) {
     return (
@@ -215,5 +248,28 @@ export default function SimChart({ stock, result }: Props) {
     );
   }
 
-  return <div ref={plotRef} className="w-full h-full min-h-[350px] sm:min-h-[450px]" />;
+  return (
+    <div className="w-full h-full">
+      {/* Time Range Selector */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex gap-1">
+          {TIME_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => onTimeRangeChange?.(r.value)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                timeRange === r.value
+                  ? "bg-accent/20 text-accent"
+                  : "text-muted hover:text-white hover:bg-bg"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-neutral">Scroll to zoom · Drag to pan</span>
+      </div>
+      <div ref={plotRef} className="w-full h-full min-h-[350px] sm:min-h-[450px]" />
+    </div>
+  );
 }
