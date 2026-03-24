@@ -1,10 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { SimulationResult, StockData } from "@/lib/events";
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+// Load Plotly from CDN at runtime instead of bundling (saves ~30MB, fixes Vercel build timeout)
+declare global {
+  interface Window {
+    Plotly: any;
+  }
+}
+
+function loadPlotly(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.Plotly) return resolve();
+    const script = document.createElement("script");
+    script.src = "https://cdn.plot.ly/plotly-2.35.3.min.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Plotly"));
+    document.head.appendChild(script);
+  });
+}
 
 interface Props {
   stock: StockData;
@@ -13,8 +29,18 @@ interface Props {
 
 export default function SimChart({ stock, result }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
 
-  const buildTraces = useCallback(() => {
+  useEffect(() => {
+    loadPlotly()
+      .then(() => setLoaded(true))
+      .catch(() => setError(true));
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !plotRef.current || !window.Plotly) return;
+
     const traces: any[] = [];
 
     // Historical price
@@ -106,69 +132,86 @@ export default function SimChart({ stock, result }: Props) {
       });
     }
 
-    return traces;
-  }, [stock, result]);
+    const allDates = [
+      ...(stock.historicalPrices?.map((p) => p.date) || []),
+      ...(result?.paths.dates || []),
+    ];
 
-  const allDates = [
-    ...(stock.historicalPrices?.map((p) => p.date) || []),
-    ...(result?.paths.dates || []),
-  ];
+    const allYAxis = [
+      ...(stock.historicalPrices?.map((p) => p.price) || []),
+      ...(result?.paths.p5 || []),
+      ...(result?.paths.p95 || []),
+    ];
 
-  const allY = [
-    ...(stock.historicalPrices?.map((p) => p.price) || []),
-    ...(result?.paths.p5 || []),
-    ...(result?.paths.p95 || []),
-  ];
+    const yMin = Math.min(...allYAxis) * 0.97;
+    const yMax = Math.max(...allYAxis) * 1.03;
 
-  const yMin = Math.min(...allY) * 0.97;
-  const yMax = Math.max(...allY) * 1.03;
+    const layout: any = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: {
+        color: "#94a3b8",
+        family: "Inter, system-ui, sans-serif",
+        size: 12,
+      },
+      margin: { t: 20, r: 20, b: 50, l: 60 },
+      xaxis: {
+        gridcolor: "rgba(42, 42, 74, 0.5)",
+        zerolinecolor: "rgba(42, 42, 74, 0.5)",
+        tickfont: { size: 10 },
+        dtick: 7,
+      },
+      yaxis: {
+        gridcolor: "rgba(42, 42, 74, 0.5)",
+        zerolinecolor: "rgba(42, 42, 74, 0.5)",
+        tickfont: { size: 10, family: "JetBrains Mono" },
+        range: [yMin, yMax],
+        tickprefix: "$",
+        nticks: 6,
+      },
+      legend: {
+        orientation: "h",
+        y: 1.12,
+        x: 0,
+        xanchor: "left",
+        font: { size: 11 },
+      },
+      hovermode: "x unified" as const,
+      dragmode: "zoom" as const,
+      autosize: true,
+    };
 
-  return (
-    <div ref={plotRef} className="w-full h-full min-h-[350px] sm:min-h-[450px]">
-      <Plot
-        data={buildTraces()}
-        layout={{
-          paper_bgcolor: "rgba(0,0,0,0)",
-          plot_bgcolor: "rgba(0,0,0,0)",
-          font: {
-            color: "#94a3b8",
-            family: "Inter, system-ui, sans-serif",
-            size: 12,
-          },
-          margin: { t: 20, r: 20, b: 50, l: 60 },
-          xaxis: {
-            gridcolor: "rgba(42, 42, 74, 0.5)",
-            zerolinecolor: "rgba(42, 42, 74, 0.5)",
-            tickfont: { size: 10 },
-            dtick: 7,
-          },
-          yaxis: {
-            gridcolor: "rgba(42, 42, 74, 0.5)",
-            zerolinecolor: "rgba(42, 42, 74, 0.5)",
-            tickfont: { size: 10, family: "JetBrains Mono" },
-            range: [yMin, yMax],
-            tickprefix: "$",
-            nticks: 6,
-          },
-          legend: {
-            orientation: "h",
-            y: 1.12,
-            x: 0,
-            xanchor: "left",
-            font: { size: 11 },
-          },
-          hovermode: "x unified",
-          dragmode: "zoom",
-        }}
-        config={{
-          displayModeBar: true,
-          modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
-          displaylogo: false,
-          responsive: true,
-        }}
-        style={{ width: "100%", height: "100%" }}
-        useResizeHandler
-      />
-    </div>
-  );
+    const config: any = {
+      displayModeBar: true,
+      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+      displaylogo: false,
+      responsive: true,
+    };
+
+    window.Plotly.newPlot(plotRef.current!, traces, layout, config);
+
+    return () => {
+      if (plotRef.current && window.Plotly) {
+        window.Plotly.purge(plotRef.current);
+      }
+    };
+  }, [loaded, stock, result]);
+
+  if (error) {
+    return (
+      <div className="w-full h-full min-h-[350px] flex items-center justify-center text-slate-500">
+        Failed to load chart. Please refresh.
+      </div>
+    );
+  }
+
+  if (!loaded) {
+    return (
+      <div className="w-full h-full min-h-[350px] flex items-center justify-center text-slate-500">
+        <div className="animate-pulse">Loading chart...</div>
+      </div>
+    );
+  }
+
+  return <div ref={plotRef} className="w-full h-full min-h-[350px] sm:min-h-[450px]" />;
 }
