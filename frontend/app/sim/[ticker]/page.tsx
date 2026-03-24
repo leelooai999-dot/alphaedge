@@ -10,7 +10,7 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory } from "@/lib/api";
-import SimChart, { TimeRange } from "@/components/SimChart";
+import type { TimeRange } from "@/components/SimChart";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
 
