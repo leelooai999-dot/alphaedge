@@ -156,10 +156,12 @@ export default function SimChart({ stock, result }: Props) {
       },
       margin: { t: 20, r: 20, b: 50, l: 60 },
       xaxis: {
+        type: "date",
         gridcolor: "rgba(42, 42, 74, 0.5)",
         zerolinecolor: "rgba(42, 42, 74, 0.5)",
         tickfont: { size: 10 },
-        dtick: 7,
+        dtick: 604800000, // 7 days in ms
+        tickformat: "%b %d",
       },
       yaxis: {
         gridcolor: "rgba(42, 42, 74, 0.5)",
