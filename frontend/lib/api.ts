@@ -21,10 +21,21 @@ export async function getStockHistory(
   }
 }
 
+/** Parallel fetch of stock info + history for initial page load */
+export async function loadTickerPage(ticker: string) {
+  const [stockData, historyData] = await Promise.all([
+    getStock(ticker),
+    getStockHistory(ticker, 90),
+  ]);
+  return { stockData, historyData };
+}
+
 export async function runSimulation(
   ticker: string,
-  events: any[]
+  events: any[],
+  options?: { fast?: boolean }
 ): Promise<any> {
+  const nSim = options?.fast ? 1000 : 5000;
   const res = await fetch(`${API_BASE}/api/simulate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -32,7 +43,8 @@ export async function runSimulation(
       ticker,
       events,
       horizon_days: 30,
-      n_simulations: 5000,
+      n_simulations: nSim,
+      fast: !!options?.fast,
     }),
   });
   if (!res.ok) throw new Error("Simulation failed");
@@ -45,3 +57,11 @@ export async function getEvents(category?: string): Promise<any[]> {
   if (!res.ok) throw new Error("Events not found");
   return res.json();
 }
+
+// --- SWR fetcher helpers ---
+
+export const swrFetcher = (url: string) =>
+  fetch(`${API_BASE}${url}`).then((r) => {
+    if (!r.ok) throw new Error(`Fetch failed: ${url}`);
+    return r.json();
+  });

@@ -11,6 +11,7 @@ from typing import List, Optional, Dict, Any
 import simulation
 import correlations
 from events import EVENTS, list_all_events, list_categories
+import time
 
 app = FastAPI(title="AlphaEdge API", version="0.1.0")
 
@@ -21,6 +22,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- TTL Cache ---
+
+class TTLCache:
+    """Simple in-memory cache with per-key TTL."""
+    def __init__(self, default_ttl: float = 300):
+        self._cache: Dict[str, tuple] = {}  # key -> (value, expiry)
+        self._default_ttl = default_ttl
+
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        value, expiry = entry
+        if time.time() > expiry:
+            del self._cache[key]
+            return None
+        return value
+
+    def set(self, key: str, value: Any, ttl: Optional[float] = None):
+        self._cache[key] = (value, time.time() + (ttl or self._default_ttl))
+
+    def invalidate(self, key: str):
+        self._cache.pop(key, None)
+
+
+# Price cache: 5 min TTL
+price_cache = TTLCache(default_ttl=300)
+# Volatility cache: 30 min TTL
+vol_cache = TTLCache(default_ttl=1800)
+# History cache: 5 min TTL (replaces unbounded dict)
+history_cache = TTLCache(default_ttl=300)
 
 
 # --- Request/Response Models ---
@@ -35,7 +69,8 @@ class SimulateRequest(BaseModel):
     ticker: str
     events: List[EventInput] = []
     horizon_days: int = 30
-    n_simulations: int = 5000
+    n_simulations: int = 2000
+    fast: bool = False
 
 
 class SimulateResponse(BaseModel):
@@ -87,30 +122,48 @@ VOL_CACHE: Dict[str, float] = {
 
 def get_price_with_fallback(ticker: str) -> float:
     """Try yfinance first, fall back to cache."""
+    ticker = ticker.upper()
+    # Check TTL cache first
+    cached = price_cache.get(ticker)
+    if cached:
+        return cached
+
     try:
         price = simulation.get_current_price(ticker)
         if price > 0:
+            price_cache.set(ticker, price)
             return price
     except Exception:
         pass
-    cached = PRICE_CACHE.get(ticker.upper())
-    if cached:
-        return cached
-    return 100.0  # absolute fallback
+    fallback = PRICE_CACHE.get(ticker)
+    if fallback:
+        price_cache.set(ticker, fallback, ttl=60)
+        return fallback
+    price_cache.set(ticker, 100.0, ttl=30)
+    return 100.0
 
 
 def get_vol_with_fallback(ticker: str) -> float:
     """Try yfinance first, fall back to cache."""
+    ticker = ticker.upper()
+    # Check TTL cache first
+    cached = vol_cache.get(ticker)
+    if cached:
+        return cached
+
     try:
         vol = simulation.get_stock_volatility(ticker)
         if vol > 0:
+            vol_cache.set(ticker, vol)
             return vol
     except Exception:
         pass
-    cached = VOL_CACHE.get(ticker.upper())
-    if cached:
-        return cached
-    return 0.30  # default 30% annual vol
+    fallback = VOL_CACHE.get(ticker)
+    if fallback:
+        vol_cache.set(ticker, fallback, ttl=120)
+        return fallback
+    vol_cache.set(ticker, 0.30, ttl=60)
+    return 0.30
 
 
 # --- Endpoints ---
@@ -210,17 +263,15 @@ def get_stock_detail(ticker: str):
     }
 
 
-# In-memory history cache to avoid yfinance rate limits
-HISTORY_CACHE: Dict[str, Dict] = {}
-
 @app.get("/api/stocks/{ticker}/history")
-def get_stock_history(ticker: str, days: int = 90):
-    """Fetch historical daily prices for a ticker using yfinance, with cache."""
+def get_stock_history_endpoint(ticker: str, days: int = 90):
+    """Fetch historical daily prices for a ticker using yfinance, with TTL cache."""
     ticker = ticker.upper()
     cache_key = f"{ticker}_{days}"
 
-    if cache_key in HISTORY_CACHE:
-        return HISTORY_CACHE[cache_key]
+    cached = history_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         import yfinance as yf
@@ -236,7 +287,7 @@ def get_stock_history(ticker: str, days: int = 90):
         dates = [d.strftime("%Y-%m-%d") for d in hist.index]
         prices = [round(p, 2) for p in hist["Close"].tolist()]
         result = {"dates": dates, "prices": prices}
-        HISTORY_CACHE[cache_key] = result
+        history_cache.set(cache_key, result)
         return result
     except HTTPException:
         raise
@@ -257,7 +308,7 @@ def get_stock_history(ticker: str, days: int = 90):
                 price = max(price + change + (cached_price - price) * 0.01, cached_price * 0.70)
                 prices.append(round(price, 2))
             result = {"dates": dates, "prices": prices}
-            HISTORY_CACHE[cache_key] = result
+            history_cache.set(cache_key, result)
             return result
         raise HTTPException(500, f"Failed to fetch history for {ticker}: {str(e)}")
 
@@ -267,12 +318,17 @@ def run_simulation(req: SimulateRequest):
     """Run Monte Carlo simulation with events."""
     ticker = req.ticker.upper()
 
+    # Determine simulation count
+    n_sim = req.n_simulations
+    if req.fast:
+        n_sim = 500
+
     # Run main simulation with events
     result = simulation.simulate(
         ticker=ticker,
         events=[{"id": e.id, "params": e.params, "probability": e.probability} for e in req.events],
         horizon_days=req.horizon_days,
-        n_simulations=req.n_simulations,
+        n_simulations=n_sim,
         seed=42,
     )
 

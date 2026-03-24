@@ -25,6 +25,8 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
+        {/* Preload Plotly CDN in background to avoid blocking chart render */}
+        <link rel="preload" href="https://cdn.plot.ly/plotly-2.35.3.min.js" as="script" />
       </head>
       <body className="bg-bg text-gray-200 min-h-screen antialiased">
         {children}
