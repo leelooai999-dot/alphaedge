@@ -5,9 +5,9 @@ import {
   createChart,
   ColorType,
   LineStyle,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
-  type LineSeries,
   type DeepPartial,
   type ChartOptions,
   type Time,
@@ -53,6 +53,7 @@ export default function SimChart({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<any, Time>[]>([]);
 
   // Create chart once
   useEffect(() => {
@@ -73,12 +74,12 @@ export default function SimChart({
         mode: CrosshairMode.Normal,
         vertLine: {
           color: COLORS.crosshair,
-          lineStyle: LineStyle.LargeDashed,
+          style: LineStyle.LargeDashed,
           labelBackgroundColor: "#1a1a2e",
         },
         horzLine: {
           color: COLORS.crosshair,
-          lineStyle: LineStyle.LargeDashed,
+          style: LineStyle.LargeDashed,
           labelBackgroundColor: "#1a1a2e",
         },
       },
@@ -119,6 +120,7 @@ export default function SimChart({
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
+      seriesRef.current = [];
     };
   }, []);
 
@@ -128,16 +130,20 @@ export default function SimChart({
     if (!chart) return;
 
     // Remove all existing series
-    chart.clearSeries();
+    for (const s of seriesRef.current) {
+      chart.removeSeries(s);
+    }
+    seriesRef.current = [];
 
     // --- Historical price line ---
-    const historicalSeries = chart.addLineSeries({
+    const historicalSeries = chart.addSeries(LineSeries, {
       color: COLORS.historical,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: true,
     });
+    seriesRef.current.push(historicalSeries);
 
     if (stock.historicalPrices.length > 0) {
       historicalSeries.setData(
@@ -153,73 +159,63 @@ export default function SimChart({
       const { dates, median, p25, p75, p5, p95 } = result.paths;
 
       // P5 line (outer lower)
-      chart.addLineSeries({
+      const p5Series = chart.addSeries(LineSeries, {
         color: COLORS.outerBand,
         lineWidth: 1,
-        lineStyle: LineStyle.Solid,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
-      }).setData(
-        dates.map((d, i) => ({ time: d as Time, value: p5[i] }))
-      );
+      });
+      seriesRef.current.push(p5Series);
+      p5Series.setData(dates.map((d, i) => ({ time: d as Time, value: p5[i] })));
 
       // P95 line (outer upper)
-      chart.addLineSeries({
+      const p95Series = chart.addSeries(LineSeries, {
         color: COLORS.outerBand,
         lineWidth: 1,
-        lineStyle: LineStyle.Solid,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
-      }).setData(
-        dates.map((d, i) => ({ time: d as Time, value: p95[i] }))
-      );
+      });
+      seriesRef.current.push(p95Series);
+      p95Series.setData(dates.map((d, i) => ({ time: d as Time, value: p95[i] })));
 
       // P25 line (inner lower)
-      chart.addLineSeries({
+      const p25Series = chart.addSeries(LineSeries, {
         color: COLORS.innerBand,
         lineWidth: 1,
-        lineStyle: LineStyle.Solid,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
-      }).setData(
-        dates.map((d, i) => ({ time: d as Time, value: p25[i] }))
-      );
+      });
+      seriesRef.current.push(p25Series);
+      p25Series.setData(dates.map((d, i) => ({ time: d as Time, value: p25[i] })));
 
       // P75 line (inner upper)
-      chart.addLineSeries({
+      const p75Series = chart.addSeries(LineSeries, {
         color: COLORS.innerBand,
         lineWidth: 1,
-        lineStyle: LineStyle.Solid,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
-      }).setData(
-        dates.map((d, i) => ({ time: d as Time, value: p75[i] }))
-      );
+      });
+      seriesRef.current.push(p75Series);
+      p75Series.setData(dates.map((d, i) => ({ time: d as Time, value: p75[i] })));
 
       // Median (dashed, prominent)
-      chart.addLineSeries({
+      const medianSeries = chart.addSeries(LineSeries, {
         color: COLORS.median,
         lineWidth: 2,
         lineStyle: LineStyle.Dashed,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: true,
-      }).setData(
-        dates.map((d, i) => ({ time: d as Time, value: median[i] }))
-      );
+      });
+      seriesRef.current.push(medianSeries);
+      medianSeries.setData(dates.map((d, i) => ({ time: d as Time, value: median[i] })));
 
-      // "Now" vertical line — use a single-point histogram series with a price line hack.
-      // The best approach in lightweight-charts v5: draw a price line on the historical series
-      // at today's date. Instead, we use a markers approach on the median series or
-      // simply add a thin vertical area. The cleanest: just use createPriceLine on the
-      // historical series. But that's horizontal. For a vertical "now" line, we'll
-      // add a 2-point line series (very high to very low at today's date).
+      // "Now" vertical line — two-point tall line series
       const todayStr = new Date().toISOString().split("T")[0];
-      // Find the price range for a tall vertical line
       const allPrices = [
         ...stock.historicalPrices.map((p) => p.price),
         ...p5,
@@ -228,31 +224,30 @@ export default function SimChart({
       const priceMin = Math.min(...allPrices) * 0.95;
       const priceMax = Math.max(...allPrices) * 1.05;
 
-      chart.addLineSeries({
+      const nowSeries = chart.addSeries(LineSeries, {
         color: COLORS.white + "60",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
-        pointMarkersVisible: false,
-      }).setData([
+      });
+      seriesRef.current.push(nowSeries);
+      nowSeries.setData([
         { time: todayStr as Time, value: priceMin },
         { time: todayStr as Time, value: priceMax },
       ]);
     }
 
-    // Fit content
+    // Fit content then apply time range
     chart.timeScale().fitContent();
 
-    // Apply time range visibility after fit
     const activeRange = TIME_RANGES.find((r) => r.value === timeRange) || TIME_RANGES[2];
     if (result && result.paths.dates.length > 0) {
       const allDates = [
         ...(stock.historicalPrices.map((p) => p.date) || []),
         ...result.paths.dates,
       ];
-      // Show only the last N days from the end
       const totalDays = allDates.length;
       const visibleDays = activeRange.days;
       const fromIndex = Math.max(0, totalDays - visibleDays);
@@ -266,13 +261,11 @@ export default function SimChart({
             to: toDate as Time,
           });
         } catch {
-          // ignore range errors if dates overlap
+          // ignore range errors
         }
       }
     }
   }, [stock, result, timeRange]);
-
-  const activeRange = TIME_RANGES.find((r) => r.value === timeRange) || TIME_RANGES[2];
 
   return (
     <div className="w-full h-full">
@@ -294,7 +287,7 @@ export default function SimChart({
           ))}
         </div>
         <span className="text-[10px] text-neutral">
-          Scroll to zoom · Drag to pan
+          Scroll to zoom / Drag to pan
         </span>
       </div>
 
@@ -314,7 +307,7 @@ export default function SimChart({
           <div className="flex items-center gap-2">
             <span
               className="inline-block w-4 h-0.5 rounded"
-              style={{ backgroundColor: COLORS.median, borderStyle: "dashed" }}
+              style={{ backgroundColor: COLORS.median, borderTop: "1px dashed #00d4aa" }}
             />
             <span className="text-[#94a3b8]">Median (projected)</span>
           </div>
@@ -323,14 +316,14 @@ export default function SimChart({
               className="inline-block w-4 h-0.5 rounded"
               style={{ backgroundColor: COLORS.innerBand }}
             />
-            <span className="text-[#94a3b8]">25th–75th %ile</span>
+            <span className="text-[#94a3b8]">25th-75th %ile</span>
           </div>
           <div className="flex items-center gap-2">
             <span
               className="inline-block w-4 h-0.5 rounded"
               style={{ backgroundColor: COLORS.outerBand }}
             />
-            <span className="text-[#94a3b8]">5th–95th %ile</span>
+            <span className="text-[#94a3b8]">5th-95th %ile</span>
           </div>
         </div>
       </div>

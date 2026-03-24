@@ -32,7 +32,7 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
                 isBullish ? "text-bullish" : "text-bearish"
               }`}
             >
-              {isBullish ? "▲" : "▼"} {Math.abs(event.impact)}%
+              {isBullish ? "+" : "-"} {Math.abs(event.impact)}%
             </span>
           </div>
         </div>
@@ -70,7 +70,7 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
         <div className="flex justify-between text-xs mb-1">
           <span className="text-muted">Duration</span>
           <span className="text-white font-mono">
-            {event.duration <= 7 ? "1 wk" : event.duration <= 21 ? `${Math.round(event.duration / 7)} wks` : event.duration <= 60 ? `${Math.round(event.duration / 30)} mo` : `${Math.round(event.duration / 30)} mos"}
+            {event.duration <= 7 ? "1 wk" : event.duration <= 21 ? `${Math.round(event.duration / 7)} wks` : event.duration <= 60 ? `${Math.round(event.duration / 30)} mo` : `${Math.round(event.duration / 30)} mos`}
           </span>
         </div>
         <input
@@ -84,7 +84,7 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
           className="w-full"
         />
         <p className="text-[10px] text-neutral mt-1 leading-tight">
-          How long the event&apos;s price effect lasts. Short events (1-7d) cause sharp moves that fade. Long events (90-365d) create sustained trends.
+          How long the event&apos;s price effect lasts. Short (1-7d) = sharp moves that fade. Long (90-365d) = sustained trends.
         </p>
       </div>
 
@@ -107,7 +107,7 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
           className="w-full"
         />
         <p className="text-[10px] text-neutral mt-1 leading-tight">
-          Expected max price move over the duration. ±5% = moderate, ±10% = significant, ±20%+ = extreme event.
+          Expected max price move. +/-5% = moderate, +/-10% = significant, +/-20%+ = extreme.
         </p>
       </div>
     </div>
