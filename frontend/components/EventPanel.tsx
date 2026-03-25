@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ActiveEvent, EVENT_TEMPLATES, CATEGORY_LABELS } from "@/lib/events";
+import { getPolymarketLiveOdds, PolymarketOdds } from "@/lib/api";
 import EventCard from "./EventCard";
 
 interface Props {
@@ -14,6 +15,21 @@ type Category = "all" | "geopolitical" | "macro" | "sector";
 export default function EventPanel({ events, onEventsChange }: Props) {
   const [category, setCategory] = useState<Category>("all");
   const [showPicker, setShowPicker] = useState(false);
+  const [liveOdds, setLiveOdds] = useState<Record<string, PolymarketOdds>>({});
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch live odds on mount + poll every 60s
+  useEffect(() => {
+    const fetchOdds = async () => {
+      const odds = await getPolymarketLiveOdds();
+      setLiveOdds(odds);
+    };
+    fetchOdds();
+    intervalRef.current = setInterval(fetchOdds, 60000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   const available = EVENT_TEMPLATES.filter((t) => {
     if (!events.find((e) => e.id === t.id)) {
@@ -28,9 +44,13 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       const template = EVENT_TEMPLATES.find((t) => t.id === templateId);
       if (!template || events.find((e) => e.id === templateId)) return;
 
+      // Use live odds if available, otherwise fall back to hardcoded
+      const live = liveOdds[templateId];
+      const probability = live ? Math.round(live.odds * 100) : template.polymarketOdds;
+
       const newEvent: ActiveEvent = {
         ...template,
-        probability: template.polymarketOdds,
+        probability,
         duration: template.defaultDuration,
         impact: template.defaultImpact,
       };
@@ -38,7 +58,7 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       onEventsChange([...events, newEvent]);
       setShowPicker(false);
     },
-    [events, onEventsChange]
+    [events, onEventsChange, liveOdds]
   );
 
   const updateEvent = useCallback(
@@ -97,6 +117,7 @@ export default function EventPanel({ events, onEventsChange }: Props) {
             event={event}
             onUpdate={updateEvent}
             onRemove={() => removeEvent(event.id)}
+            liveOdds={liveOdds[event.id] || null}
           />
         ))}
       </div>
@@ -152,19 +173,29 @@ export default function EventPanel({ events, onEventsChange }: Props) {
                 All events in this category are already added
               </p>
             )}
-            {available.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => addEvent(t.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-bg transition-colors text-left"
-              >
-                <span>{t.emoji}</span>
-                <span className="text-sm text-white flex-1">{t.name}</span>
-                <span className="text-xs text-muted font-mono">
-                  {t.polymarketOdds}%
-                </span>
-              </button>
-            ))}
+            {available.map((t) => {
+              const live = liveOdds[t.id];
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => addEvent(t.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-bg transition-colors text-left"
+                >
+                  <span>{t.emoji}</span>
+                  <span className="text-sm text-white flex-1">{t.name}</span>
+                  {live ? (
+                    <span className="text-xs font-mono flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" />
+                      <span className="text-green-400">{Math.round(live.odds * 100)}%</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted font-mono">
+                      {t.polymarketOdds}%
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

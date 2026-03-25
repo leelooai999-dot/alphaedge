@@ -58,6 +58,29 @@ export async function getEvents(category?: string): Promise<any[]> {
   return res.json();
 }
 
+// --- Polymarket Live Odds ---
+
+export interface PolymarketOdds {
+  odds: number;
+  question: string;
+  slug: string;
+  volume_24h: number;
+  is_inverse: boolean;
+  last_updated: string;
+}
+
+export async function getPolymarketLiveOdds(): Promise<
+  Record<string, PolymarketOdds>
+> {
+  try {
+    const res = await fetch(`${API_BASE}/api/polymarket/live`);
+    if (!res.ok) return {};
+    return res.json();
+  } catch {
+    return {};
+  }
+}
+
 // --- SWR fetcher helpers ---
 
 export const swrFetcher = (url: string) =>

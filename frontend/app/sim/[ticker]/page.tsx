@@ -9,7 +9,7 @@ import EventPanel from "@/components/EventPanel";
 import ImpactBreakdown from "@/components/ImpactBreakdown";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { getStock, runSimulation, getStockHistory } from "@/lib/api";
+import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
 import type { TimeRange } from "@/components/SimChart";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
@@ -42,9 +42,10 @@ export default function SimulatorPage() {
 
       if (apiAvailable) {
         try {
-          const [data, history] = await Promise.all([
+          const [data, history, polyOdds] = await Promise.all([
             getStock(ticker),
             getStockHistory(ticker, 90),
+            getPolymarketLiveOdds(),
           ]);
 
           if (cancelled) return;
@@ -65,15 +66,20 @@ export default function SimulatorPage() {
           };
           setStock(newStock);
 
-          // Populate related events from API
+          // Populate related events from API, using live Polymarket odds when available
           if (data.related_events && data.related_events.length > 0) {
             const apiEvents = data.related_events
               .map((re: any) => {
                 const tmpl = EVENT_TEMPLATES.find((t) => t.id === re.id);
                 if (!tmpl) return null;
+                // Prefer live Polymarket odds > API probability > hardcoded
+                const liveOdd = polyOdds[re.id];
+                const probability = liveOdd
+                  ? Math.round(liveOdd.odds * 100)
+                  : re.probability * 100 || tmpl.polymarketOdds;
                 return {
                   ...tmpl,
-                  probability: re.probability * 100 || tmpl.polymarketOdds,
+                  probability,
                   duration: tmpl.defaultDuration,
                   impact: tmpl.defaultImpact,
                 };

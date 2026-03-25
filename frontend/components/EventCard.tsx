@@ -1,15 +1,26 @@
 "use client";
 
 import { ActiveEvent } from "@/lib/events";
+import type { PolymarketOdds } from "@/lib/api";
 
 interface Props {
   event: ActiveEvent;
   onUpdate: (updated: ActiveEvent) => void;
   onRemove: () => void;
+  liveOdds?: PolymarketOdds | null;
 }
 
-export default function EventCard({ event, onUpdate, onRemove }: Props) {
+export default function EventCard({ event, onUpdate, onRemove, liveOdds }: Props) {
   const isBullish = event.impact > 0;
+  const hasLive = !!liveOdds;
+  const livePct = hasLive ? Math.round(liveOdds!.odds * 100) : null;
+  const isLiveMatch = hasLive && livePct === event.probability;
+
+  const handleResetToLive = () => {
+    if (livePct !== null) {
+      onUpdate({ ...event, probability: livePct });
+    }
+  };
 
   return (
     <div className="bg-bg/50 border border-border rounded-xl p-4 space-y-3 hover:border-border/80 transition-colors">
@@ -22,11 +33,20 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
               {event.name}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 text-accent text-xs font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent live-dot" />
+              {hasLive ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              )}
               {event.probability}% likely
             </span>
+            {hasLive && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-medium">
+                LIVE
+              </span>
+            )}
             <span
               className={`text-xs font-medium ${
                 isBullish ? "text-bullish" : "text-bearish"
@@ -47,11 +67,34 @@ export default function EventCard({ event, onUpdate, onRemove }: Props) {
         </button>
       </div>
 
+      {/* Polymarket source */}
+      {hasLive && (
+        <div className="text-[10px] text-neutral leading-tight px-1">
+          <span className="text-green-400/70">Polymarket:</span>{" "}
+          <span className="italic">&ldquo;{liveOdds!.question.length > 50 ? liveOdds!.question.slice(0, 50) + "..." : liveOdds!.question}&rdquo;</span>
+          {liveOdds!.volume_24h > 0 && (
+            <span className="ml-1 text-muted">
+              · ${(liveOdds!.volume_24h / 1e6).toFixed(1)}M vol
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Probability slider */}
       <div>
         <div className="flex justify-between text-xs mb-1">
           <span className="text-muted">Probability</span>
-          <span className="text-white font-mono">{event.probability}%</span>
+          <div className="flex items-center gap-2">
+            {hasLive && !isLiveMatch && (
+              <button
+                onClick={handleResetToLive}
+                className="text-[10px] text-green-400 hover:text-green-300 transition-colors"
+              >
+                Reset to Live ({livePct}%)
+              </button>
+            )}
+            <span className="text-white font-mono">{event.probability}%</span>
+          </div>
         </div>
         <input
           type="range"

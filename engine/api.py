@@ -174,11 +174,22 @@ def root():
 
 
 @app.get("/api/events")
-def get_events(category: Optional[str] = None):
-    """List all available events, optionally filtered by category."""
+def get_events(category: Optional[str] = None, live: bool = False):
+    """List all available events, optionally filtered by category.
+    Pass ?live=true to include Polymarket live odds."""
     events = list_all_events()
     if category:
         events = [e for e in events if e.category == category]
+
+    # Optionally enrich with Polymarket live odds
+    live_odds = {}
+    if live:
+        try:
+            from polymarket import get_all_live_odds
+            live_odds = get_all_live_odds()
+        except Exception:
+            pass
+
     return [
         {
             "id": e.key,
@@ -187,6 +198,7 @@ def get_events(category: Optional[str] = None):
             "description": e.description,
             "probability": e.probability,
             "polymarket_keywords": e.polymarket_keywords,
+            "polymarket_odds": live_odds.get(e.key),
             "parameters": [
                 {"key": k, "min": p.min, "max": p.max, "default": p.default, "step": p.step, "label": p.label}
                 for k, p in e.parameters.items()
@@ -386,6 +398,23 @@ def run_simulation(req: SimulateRequest):
 def get_categories():
     """List event categories."""
     return {"categories": list_categories()}
+
+
+@app.get("/api/polymarket/live")
+def get_polymarket_live():
+    """Get live Polymarket odds for all configured events."""
+    from polymarket import get_all_live_odds
+    return get_all_live_odds()
+
+
+@app.get("/api/polymarket/{event_key}")
+def get_polymarket_event(event_key: str):
+    """Get live Polymarket odds for a specific event."""
+    from polymarket import get_live_odds
+    data = get_live_odds(event_key)
+    if not data:
+        raise HTTPException(404, f"No Polymarket market found for event '{event_key}'")
+    return data
 
 
 @app.get("/health")

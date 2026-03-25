@@ -1,0 +1,22 @@
+# Ralphy Progress Log
+
+- [✗] 2026-03-25 20:27 - Add Pillow to engine/requirements.txt
+- [✗] 2026-03-25 20:27 - Create `engine/og_image.py` — OG image generator with Pillow
+- [✗] 2026-03-25 20:27 - Add `GET /api/og` endpoint to `engine/api.py`
+- [✗] 2026-03-25 20:27 - Update share button in `frontend/app/sim/[ticker]/page.tsx` with dropdown (Copy Link, X, Reddit, Download)
+- [✗] 2026-03-25 20:27 - Add URL param parsing for shareable scenario URLs (read events from `?events=` query param)
+- [✗] 2026-03-25 20:27 - Add `generateMetadata` for dynamic OG tags in the sim page
+- [✗] 2026-03-25 20:27 - Test: share URL on Twitter → preview card shows correctly
+- [✓] 2026-03-25 20:56 - Create `engine/polymarket.py` — Polymarket API client with caching (5min TTL)
+- [✓] 2026-03-25 20:59 - Add keyword-based market search + best-match selection logic
+- [✓] 2026-03-25 21:04 - Add inverse detection (if question contains "ceasefire", "no", "won't", invert the odds)
+- [✓] 2026-03-25 21:06 - Update `GET /api/events` in `engine/api.py` to include live odds
+- [✓] 2026-03-25 21:09 - Add `GET /api/polymarket/live` endpoint for lightweight polling
+- [✓] 2026-03-25 21:09 - Add `Pillow` is NOT needed for this PRD (that's for OG images)
+- [✓] 2026-03-25 21:10 - Update `frontend/lib/api.ts` — add `fetchLiveOdds()` + 60s polling
+- [✓] 2026-03-25 21:10 - Update `frontend/lib/events.ts` — add `liveOdds` field
+- [✓] 2026-03-25 21:12 - Update `frontend/components/EventCard.tsx` or `EventPanel.tsx` — show LIVE badge, Polymarket source, volume
+- [✓] 2026-03-25 21:13 - Update `frontend/app/sim/[ticker]/page.tsx` — use live odds as default probability, "Reset to Live" button
+- [✓] 2026-03-25 21:15 - Add error handling: if Polymarket API is down, everything works with fallback odds
+- [✓] 2026-03-25 21:21 - Test: verify CVX + iran_escalation shows live odds from Polymarket
+- [✓] 2026-03-25 21:22 - Commit and push all changes
