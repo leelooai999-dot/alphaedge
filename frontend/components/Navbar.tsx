@@ -29,6 +29,12 @@ export default function Navbar() {
               Simulator
             </Link>
             <Link
+              href="/explore"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              Explore
+            </Link>
+            <Link
               href="/methodology"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
@@ -68,6 +74,13 @@ export default function Navbar() {
               onClick={() => setOpen(false)}
             >
               Simulator
+            </Link>
+            <Link
+              href="/explore"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              Explore
             </Link>
             <Link
               href="/methodology"

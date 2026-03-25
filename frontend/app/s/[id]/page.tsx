@@ -1,148 +1,219 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import dynamic from "next/dynamic";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import { ActiveEvent, StockData } from "@/lib/events";
-import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { useState, useEffect } from "react";
+import { EVENT_TEMPLATES } from "@/lib/events";
 
-const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
-const ImpactBreakdown = dynamic(
-  () => import("@/components/ImpactBreakdown"),
-  { ssr: false }
-);
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-// Mock a shared scenario for demo purposes
-export default function SharePage() {
+export default function ScenarioPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
+  const [scenario, setScenario] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [stock] = useState<StockData>(MOCK_STOCKS.CVX);
-  const [events] = useState<ActiveEvent[]>([
-    {
-      ...MOCK_STOCKS.CVX,
-      id: "iran-escalation",
-      name: "Iran-Israel Escalation",
-      category: "geopolitical",
-      emoji: "🔴",
-      polymarketOdds: 67,
-      defaultImpact: 9.3,
-      defaultDuration: 30,
-      direction: "bullish",
-      description: "",
-      probability: 67,
-      duration: 30,
-      impact: 9.3,
-    },
-  ]);
-  const [result] = useState(() => mockSimulate("CVX", [
-    {
-      id: "iran-escalation",
-      name: "Iran-Israel Escalation",
-      category: "geopolitical",
-      emoji: "🔴",
-      polymarketOdds: 67,
-      defaultImpact: 9.3,
-      defaultDuration: 30,
-      direction: "bullish",
-      description: "",
-      probability: 67,
-      duration: 30,
-      impact: 9.3,
-    },
-  ]));
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/scenarios/${id}`);
+        if (!res.ok) throw new Error("Scenario not found");
+        setScenario(await res.json());
+      } catch (e: any) {
+        setError(e.message);
+      }
+      setLoading(false);
+    };
+    load();
+  }, [id]);
 
-  const embedCode = `<iframe src="${typeof window !== 'undefined' ? window.location.origin : ''}/s/${id}" width="100%" height="500" frameborder="0"></iframe>`;
+  const handleOpenInSimulator = () => {
+    if (!scenario) return;
+    // Build URL with event params
+    const eventParams = scenario.events
+      .map((e: any) => `${e.id}:${e.probability}:${e.duration}:${e.impact}`)
+      .join(",");
+    router.push(`/sim/${scenario.ticker}?events=${eventParams}`);
+  };
+
+  const handleFork = async () => {
+    const authorName = localStorage.getItem("alphaedge_author") || "Anonymous";
+    try {
+      const res = await fetch(`${API_BASE}/api/scenarios/${id}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author_name: authorName }),
+      });
+      if (res.ok) {
+        const forked = await res.json();
+        router.push(`/s/${forked.id}`);
+      }
+    } catch (e) {
+      console.error("Fork failed:", e);
+    }
+  };
+
+  const handleShare = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+    }
+  };
+
+  if (loading) {
+    return (
+      <main className="min-h-screen pt-14">
+        <Navbar />
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-1/3 bg-border rounded" />
+            <div className="h-4 w-2/3 bg-border rounded" />
+            <div className="h-64 bg-border rounded-xl" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !scenario) {
+    return (
+      <main className="min-h-screen pt-14">
+        <Navbar />
+        <div className="max-w-4xl mx-auto px-4 py-16 text-center">
+          <div className="text-4xl mb-3">😕</div>
+          <h1 className="text-xl font-bold text-white mb-2">Scenario Not Found</h1>
+          <p className="text-muted text-sm mb-6">{error || "This scenario doesn't exist or has been removed."}</p>
+          <button
+            onClick={() => router.push("/explore")}
+            className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 text-sm"
+          >
+            Explore Scenarios
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  const rs = scenario.result_summary;
+  const isBullish = rs && rs.eventImpact >= 0;
 
   return (
     <main className="min-h-screen pt-14">
       <Navbar />
 
-      <div className="max-w-5xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-muted">Shared Scenario</span>
-              <span className="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-md">
-                CVX
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="font-mono font-bold text-accent text-xl">{scenario.ticker}</span>
+            <span className="text-xs text-muted px-2 py-0.5 bg-card rounded-md border border-border">
+              by {scenario.author_name}
+            </span>
+            {scenario.forked_from && (
+              <span className="text-xs text-neutral">
+                🔀 Forked
               </span>
-            </div>
-            <h1 className="text-2xl font-bold text-white">
-              🔴 Iran-Israel Escalation → Chevron
-            </h1>
-            <p className="text-sm text-muted mt-1">
-              Created by <span className="text-white">Anonymous</span> ·
-              Shared just now
-            </p>
+            )}
           </div>
-          <Link
-            href="/sim/CVX"
-            className="px-5 py-2.5 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm no-underline shrink-0"
-          >
-            Open in Simulator →
-          </Link>
-        </div>
-
-        {/* Chart */}
-        <div className="bg-card rounded-2xl border border-border p-4 mb-4">
-          <SimChart stock={stock} result={result} />
+          <h1 className="text-xl font-bold text-white mb-2">{scenario.title}</h1>
+          {scenario.description && (
+            <p className="text-sm text-muted leading-relaxed">{scenario.description}</p>
+          )}
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-card rounded-xl border border-border p-3">
-            <div className="text-xs text-muted mb-1">30-day target</div>
-            <div className="font-mono font-bold text-lg text-white">
-              ${result.median30d.toFixed(0)}
+        {rs && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="bg-card rounded-xl border border-border p-3">
+              <div className="text-xs text-muted mb-1">Target Price</div>
+              <div className={`font-mono font-bold text-lg ${isBullish ? "text-bullish" : "text-bearish"}`}>
+                ${rs.median30d?.toFixed(0)}
+              </div>
+              <div className="text-xs text-neutral">from ${rs.currentPrice?.toFixed(0)}</div>
             </div>
-            <div className="text-xs text-neutral mt-0.5">median</div>
+            <div className="bg-card rounded-xl border border-border p-3">
+              <div className="text-xs text-muted mb-1">Prob. Profit</div>
+              <div className={`font-mono font-bold text-lg ${rs.probProfit >= 50 ? "text-bullish" : "text-bearish"}`}>
+                {rs.probProfit}%
+              </div>
+            </div>
+            <div className="bg-card rounded-xl border border-border p-3">
+              <div className="text-xs text-muted mb-1">Event Impact</div>
+              <div className={`font-mono font-bold text-lg ${isBullish ? "text-bullish" : "text-bearish"}`}>
+                {rs.eventImpact >= 0 ? "+" : ""}${rs.eventImpact?.toFixed(0)}
+              </div>
+            </div>
+            <div className="bg-card rounded-xl border border-border p-3">
+              <div className="text-xs text-muted mb-1">Events</div>
+              <div className="font-mono font-bold text-lg text-white">
+                {scenario.events.length}
+              </div>
+            </div>
           </div>
-          <div className="bg-card rounded-xl border border-border p-3">
-            <div className="text-xs text-muted mb-1">Prob. of profit</div>
-            <div className="font-mono font-bold text-lg text-bullish">
-              {result.probProfit}%
-            </div>
-          </div>
-          <div className="bg-card rounded-xl border border-border p-3">
-            <div className="text-xs text-muted mb-1">Max drawdown</div>
-            <div className="font-mono font-bold text-lg text-bearish">
-              ${result.maxDrawdown5p.toFixed(0)}
-            </div>
-            <div className="text-xs text-neutral mt-0.5">5th percentile</div>
-          </div>
-          <div className="bg-card rounded-xl border border-border p-3">
-            <div className="text-xs text-muted mb-1">Event impact</div>
-            <div className="font-mono font-bold text-lg text-bullish">
-              +${result.eventImpact.toFixed(0)}
-            </div>
-            <div className="text-xs text-neutral mt-0.5">vs base case</div>
+        )}
+
+        {/* Events */}
+        <div className="bg-card rounded-xl border border-border p-4 mb-6">
+          <h2 className="text-sm font-semibold text-white mb-3">Events Applied</h2>
+          <div className="space-y-3">
+            {scenario.events.map((e: any) => {
+              const tmpl = EVENT_TEMPLATES.find((t) => t.id === e.id);
+              const impact = e.impact || 0;
+              return (
+                <div key={e.id} className="flex items-center justify-between bg-bg/50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span>{tmpl?.emoji || "📊"}</span>
+                    <span className="text-sm text-white">{tmpl?.name || e.id}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-accent font-mono">{e.probability}%</span>
+                    <span className="text-muted">{e.duration}d</span>
+                    <span className={`font-mono font-medium ${impact >= 0 ? "text-bullish" : "text-bearish"}`}>
+                      {impact >= 0 ? "+" : ""}{impact}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Impact breakdown */}
-        <ImpactBreakdown result={result} />
+        {/* Actions */}
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleOpenInSimulator}
+            className="px-4 py-2.5 bg-accent text-white font-medium rounded-lg hover:bg-accent/80 transition-colors text-sm"
+          >
+            🎮 Open in Simulator
+          </button>
+          <button
+            onClick={handleFork}
+            className="px-4 py-2.5 bg-accent/10 text-accent font-medium rounded-lg hover:bg-accent/20 transition-colors text-sm"
+          >
+            🔀 Fork This Scenario
+          </button>
+          <button
+            onClick={handleShare}
+            className="px-4 py-2.5 border border-border text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors text-sm"
+          >
+            📋 Copy Link
+          </button>
+          <a
+            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${scenario.title} — ${rs?.probProfit || 50}% profit probability 📊`)}&url=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "")}`}
+            target="_blank"
+            className="px-4 py-2.5 border border-border text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors text-sm"
+          >
+            Share on X
+          </a>
+        </div>
 
-        {/* Embed code */}
-        <div className="mt-6 bg-card rounded-2xl border border-border p-4">
-          <h3 className="text-sm font-semibold text-white mb-2">Embed Widget</h3>
-          <p className="text-xs text-muted mb-3">
-            Paste this code into Reddit, Twitter, or any HTML page to embed this
-            scenario.
-          </p>
-          <div className="relative">
-            <code className="block bg-bg rounded-lg p-3 text-xs font-mono text-muted overflow-x-auto">
-              {embedCode}
-            </code>
-            <button
-              onClick={() => navigator.clipboard?.writeText(embedCode)}
-              className="absolute top-2 right-2 px-2 py-1 bg-card text-xs text-muted rounded hover:text-white transition-colors"
-            >
-              Copy
-            </button>
-          </div>
+        {/* Engagement */}
+        <div className="flex items-center gap-6 mt-6 text-sm text-neutral">
+          <span>{scenario.views.toLocaleString()} views</span>
+          <span>{scenario.forks} forks</span>
+          <span>❤️ {scenario.likes} likes</span>
+          <span className="text-xs">Published {new Date(scenario.created_at).toLocaleDateString()}</span>
         </div>
       </div>
     </main>

@@ -10,6 +10,7 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
+import SaveScenarioModal from "@/components/SaveScenarioModal";
 import type { TimeRange } from "@/components/SimChart";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
@@ -310,9 +311,10 @@ export default function SimulatorPage() {
     runSim(false);
   }, [runSim]);
 
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
   const handleSave = () => {
-    const id = Math.random().toString(36).substr(2, 8);
-    router.push(`/s/${id}`);
+    setShowSaveModal(true);
   };
 
   const handleShare = () => {
@@ -440,6 +442,23 @@ export default function SimulatorPage() {
           </div>
         </div>
       </div>
+
+      <SaveScenarioModal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        ticker={ticker}
+        events={events}
+        resultSummary={
+          result
+            ? {
+                median30d: result.median30d,
+                probProfit: result.probProfit,
+                eventImpact: result.eventImpact,
+                currentPrice: result.currentPrice,
+              }
+            : null
+        }
+      />
     </main>
   );
 }

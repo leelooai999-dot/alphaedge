@@ -11,6 +11,8 @@ from typing import List, Optional, Dict, Any
 import simulation
 import correlations
 from events import EVENTS, list_all_events, list_categories
+from db import increment_sim_counter, get_stats as get_global_stats
+import scenarios
 import time
 
 app = FastAPI(title="AlphaEdge API", version="0.1.0")
@@ -332,6 +334,10 @@ baseline_cache = TTLCache(default_ttl=300)
 @app.post("/api/simulate")
 def run_simulation(req: SimulateRequest):
     """Run Monte Carlo simulation with events."""
+    try:
+        increment_sim_counter()
+    except Exception:
+        pass  # Don't fail simulation if counter breaks
     ticker = req.ticker.upper()
 
     # Determine simulation count — fast mode for slider interactions
@@ -399,6 +405,91 @@ def get_categories():
     """List event categories."""
     return {"categories": list_categories()}
 
+
+# --- Scenario Endpoints ---
+
+class ScenarioCreate(BaseModel):
+    ticker: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    events: List[Dict[str, Any]]
+    result_summary: Optional[Dict[str, Any]] = None
+    author_name: str = "Anonymous"
+    is_public: bool = True
+    tags: Optional[str] = None
+
+
+class ScenarioFork(BaseModel):
+    author_name: str = "Anonymous"
+
+
+class ScenarioLike(BaseModel):
+    session_id: str
+
+
+@app.post("/api/scenarios")
+def create_scenario(req: ScenarioCreate):
+    """Save a new scenario."""
+    result = scenarios.create_scenario(
+        ticker=req.ticker,
+        events=req.events,
+        result_summary=req.result_summary,
+        title=req.title,
+        description=req.description,
+        author_name=req.author_name,
+        is_public=req.is_public,
+        tags=req.tags,
+    )
+    return result
+
+
+@app.get("/api/scenarios")
+def list_scenarios_endpoint(
+    sort: str = "trending",
+    ticker: Optional[str] = None,
+    tag: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """List public scenarios."""
+    return scenarios.list_scenarios(
+        sort=sort, ticker=ticker, tag=tag,
+        limit=min(limit, 50), offset=offset,
+    )
+
+
+@app.get("/api/scenarios/stats")
+def get_scenario_stats():
+    """Get global stats for social proof."""
+    return get_global_stats()
+
+
+@app.get("/api/scenarios/{scenario_id}")
+def get_scenario(scenario_id: str):
+    """Get a scenario by ID (increments views)."""
+    result = scenarios.get_scenario(scenario_id, increment_views=True)
+    if not result:
+        raise HTTPException(404, "Scenario not found")
+    return result
+
+
+@app.post("/api/scenarios/{scenario_id}/fork")
+def fork_scenario(scenario_id: str, req: ScenarioFork):
+    """Fork a scenario."""
+    result = scenarios.fork_scenario(scenario_id, author_name=req.author_name)
+    if not result:
+        raise HTTPException(404, "Scenario not found")
+    return result
+
+
+@app.post("/api/scenarios/{scenario_id}/like")
+def like_scenario(scenario_id: str, req: ScenarioLike):
+    """Like a scenario."""
+    newly_liked = scenarios.like_scenario(scenario_id, req.session_id)
+    return {"liked": newly_liked}
+
+
+# --- Polymarket Endpoints ---
 
 @app.get("/api/polymarket/live")
 def get_polymarket_live():

@@ -1,7 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import ScenarioCard from "@/components/ScenarioCard";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface ScenarioCard {
   ticker: string;
@@ -138,6 +142,23 @@ const features = [
 ];
 
 export default function LandingPage() {
+  const [trendingScenarios, setTrendingScenarios] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [scenRes, statsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/scenarios?sort=trending&limit=6`),
+          fetch(`${API_BASE}/api/scenarios/stats`),
+        ]);
+        if (scenRes.ok) setTrendingScenarios(await scenRes.json());
+        if (statsRes.ok) setStats(await statsRes.json());
+      } catch {}
+    };
+    load();
+  }, []);
+
   return (
     <main className="min-h-screen">
       <Navbar />
@@ -239,6 +260,42 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Trending Community Scenarios */}
+      {trendingScenarios.length > 0 && (
+        <section className="py-12 px-4 bg-bg/50">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white">
+                  🔥 Trending Scenarios
+                </h2>
+                {stats && (
+                  <p className="text-xs text-muted mt-1">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" />
+                      {(stats.simulations_today || 0).toLocaleString()} simulations today
+                    </span>
+                    <span className="mx-2">·</span>
+                    {(stats.total_scenarios || 0).toLocaleString()} scenarios published
+                  </p>
+                )}
+              </div>
+              <Link
+                href="/explore"
+                className="text-sm text-accent hover:text-accent/80 no-underline"
+              >
+                View all →
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {trendingScenarios.map((s) => (
+                <ScenarioCard key={s.id} scenario={s} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Features */}
       <section className="py-16 px-4">
