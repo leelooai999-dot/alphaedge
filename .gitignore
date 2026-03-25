@@ -9,3 +9,9 @@ __pycache__/
 .env.production
 *.log
 .DS_Store
+
+# Local state
+.vercel/
+build-monitor-state.json
+frontend/.env.vercel
+frontend/.last-deployment-state

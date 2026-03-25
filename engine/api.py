@@ -313,33 +313,53 @@ def get_stock_history_endpoint(ticker: str, days: int = 90):
         raise HTTPException(500, f"Failed to fetch history for {ticker}: {str(e)}")
 
 
+# Baseline cache: keyed by (ticker, horizon_days) — baseline doesn't change with events
+baseline_cache = TTLCache(default_ttl=300)
+
+
 @app.post("/api/simulate")
 def run_simulation(req: SimulateRequest):
     """Run Monte Carlo simulation with events."""
     ticker = req.ticker.upper()
 
-    # Determine simulation count
+    # Determine simulation count — fast mode for slider interactions
     n_sim = req.n_simulations
     if req.fast:
         n_sim = 500
 
-    # Run main simulation with events
+    # Get price + vol from cache (avoid redundant yfinance calls)
+    price = get_price_with_fallback(ticker)
+    vol = get_vol_with_fallback(ticker)
+
+    # Run main simulation with events (pass cached price/vol to skip yfinance)
     result = simulation.simulate(
         ticker=ticker,
         events=[{"id": e.id, "params": e.params, "probability": e.probability} for e in req.events],
         horizon_days=req.horizon_days,
         n_simulations=n_sim,
         seed=42,
+        cached_price=price,
+        cached_vol=vol,
     )
 
-    # Run baseline (no events) for comparison
-    try:
-        baseline = simulation.simulate_no_events(ticker, req.horizon_days, 2000, seed=42)
-        baseline_target = baseline.median_target
-        event_impact_usd = round(result.median_target - baseline_target, 2)
-    except Exception:
-        baseline_target = None
-        event_impact_usd = None
+    # Run baseline (no events) for comparison — use cache
+    baseline_key = f"{ticker}_{req.horizon_days}"
+    baseline_target = baseline_cache.get(baseline_key)
+    if baseline_target is None:
+        try:
+            baseline = simulation.simulate(
+                ticker, [], req.horizon_days, min(n_sim, 2000), seed=42,
+                cached_price=price, cached_vol=vol,
+            )
+            baseline_target = baseline.median_target
+            baseline_cache.set(baseline_key, baseline_target)
+        except Exception:
+            baseline_target = None
+
+    event_impact_usd = round(result.median_target - baseline_target, 2) if baseline_target else None
+
+    # Limit paths for fast mode (reduce response size)
+    max_paths = 20 if req.fast else 50
 
     return SimulateResponse(
         ticker=result.ticker,
@@ -356,7 +376,7 @@ def run_simulation(req: SimulateRequest):
         max_drawdown_median=result.max_drawdown_median,
         expected_return_pct=result.expected_return_pct,
         event_impact_breakdown=result.event_impact_breakdown,
-        paths_sample=result.paths_sample[:50],  # limit for response size
+        paths_sample=result.paths_sample[:max_paths],
         baseline_target=baseline_target,
         event_impact_usd=event_impact_usd,
     )

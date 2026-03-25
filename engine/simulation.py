@@ -127,7 +127,9 @@ def simulate(
     events: List[Dict[str, any]],
     horizon_days: int = 30,
     n_simulations: int = 10000,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    cached_price: Optional[float] = None,
+    cached_vol: Optional[float] = None,
 ) -> SimulationResult:
     """
     Run Monte Carlo simulation for a stock with event-driven adjustments.
@@ -138,6 +140,8 @@ def simulate(
         horizon_days: Number of trading days to simulate
         n_simulations: Number of Monte Carlo paths
         seed: Random seed for reproducibility
+        cached_price: Pre-fetched price (skips yfinance call)
+        cached_vol: Pre-fetched volatility (skips yfinance call)
 
     Returns:
         SimulationResult with statistics and sample paths
@@ -145,19 +149,24 @@ def simulate(
     if seed is not None:
         np.random.seed(seed)
 
-    # Get stock data
-    current_price = get_current_price(ticker)
-    if current_price <= 0:
-        # Fallback to cache
-        from api import PRICE_CACHE, VOL_CACHE
-        current_price = PRICE_CACHE.get(ticker.upper(), 0)
+    # Use cached values if provided (avoids redundant yfinance calls)
+    if cached_price and cached_price > 0:
+        current_price = cached_price
+    else:
+        current_price = get_current_price(ticker)
         if current_price <= 0:
-            raise ValueError(f"Could not get price for {ticker}")
+            from api import PRICE_CACHE, VOL_CACHE
+            current_price = PRICE_CACHE.get(ticker.upper(), 0)
+            if current_price <= 0:
+                raise ValueError(f"Could not get price for {ticker}")
 
-    volatility = get_stock_volatility(ticker)
-    if volatility <= 0:
-        from api import VOL_CACHE
-        volatility = VOL_CACHE.get(ticker.upper(), 0.30)
+    if cached_vol and cached_vol > 0:
+        volatility = cached_vol
+    else:
+        volatility = get_stock_volatility(ticker)
+        if volatility <= 0:
+            from api import VOL_CACHE
+            volatility = VOL_CACHE.get(ticker.upper(), 0.30)
     stock_info = get_stock_info(ticker)
 
     # Base parameters (annualized drift from historical average ~7%)
@@ -253,10 +262,13 @@ def simulate_no_events(
     ticker: str,
     horizon_days: int = 30,
     n_simulations: int = 10000,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    cached_price: Optional[float] = None,
+    cached_vol: Optional[float] = None,
 ) -> SimulationResult:
     """Baseline simulation with no events."""
-    return simulate(ticker, [], horizon_days, n_simulations, seed)
+    return simulate(ticker, [], horizon_days, n_simulations, seed,
+                    cached_price=cached_price, cached_vol=cached_vol)
 
 
 if __name__ == "__main__":

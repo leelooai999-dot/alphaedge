@@ -400,7 +400,7 @@ export default function SimulatorPage() {
           </div>
           <div className="lg:col-span-3 space-y-4">
             <div className="bg-card rounded-2xl border border-border p-4">
-              <SimChart stock={stock} result={result} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
+              <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
             </div>
             {result && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

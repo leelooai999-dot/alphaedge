@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import {
   createChart,
   ColorType,
   LineStyle,
   LineSeries,
+  AreaSeries,
   type IChartApi,
   type ISeriesApi,
   type DeepPartial,
@@ -13,13 +14,14 @@ import {
   type Time,
   CrosshairMode,
 } from "lightweight-charts";
-import { SimulationResult, StockData } from "@/lib/events";
+import { SimulationResult, StockData, ActiveEvent } from "@/lib/events";
 
 export type TimeRange = "7d" | "15d" | "30d" | "60d" | "90d";
 
 interface Props {
   stock: StockData;
   result: SimulationResult | null;
+  events?: ActiveEvent[];
   timeRange?: TimeRange;
   onTimeRangeChange?: (range: TimeRange) => void;
 }
@@ -40,14 +42,28 @@ const COLORS = {
   white: "#ffffff",
   historical: "#64748b",
   median: "#00d4aa",
-  outerBand: "rgba(0, 212, 170, 0.35)",
-  innerBand: "rgba(0, 212, 170, 0.55)",
+  outerBand: "rgba(0, 212, 170, 0.08)",
+  outerLine: "rgba(0, 212, 170, 0.25)",
+  innerBand: "rgba(0, 212, 170, 0.15)",
+  innerLine: "rgba(0, 212, 170, 0.45)",
   crosshair: "#758696",
+  bullish: "#00d4aa",
+  bearish: "#ff4757",
+  neutral: "#fbbf24",
+};
+
+// Event zone colors with transparency
+const EVENT_ZONE_COLORS: Record<string, { bg: string; border: string }> = {
+  geopolitical: { bg: "rgba(255, 71, 87, 0.06)", border: "rgba(255, 71, 87, 0.3)" },
+  macro: { bg: "rgba(0, 212, 170, 0.06)", border: "rgba(0, 212, 170, 0.3)" },
+  sector: { bg: "rgba(251, 191, 36, 0.06)", border: "rgba(251, 191, 36, 0.3)" },
+  custom: { bg: "rgba(139, 92, 246, 0.06)", border: "rgba(139, 92, 246, 0.3)" },
 };
 
 export default function SimChart({
   stock,
   result,
+  events = [],
   timeRange = "30d",
   onTimeRangeChange,
 }: Props) {
@@ -67,8 +83,8 @@ export default function SimChart({
         fontSize: 12,
       },
       grid: {
-        vertLines: { color: COLORS.grid + "80" },
-        horzLines: { color: COLORS.grid + "80" },
+        vertLines: { color: COLORS.grid + "40" },
+        horzLines: { color: COLORS.grid + "40" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -85,11 +101,12 @@ export default function SimChart({
       },
       rightPriceScale: {
         borderColor: COLORS.grid,
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        scaleMargins: { top: 0.08, bottom: 0.08 },
       },
       timeScale: {
         borderColor: COLORS.grid,
         timeVisible: false,
+        minBarSpacing: 3,
       },
       handleScale: {
         axisPressedMouseMove: true,
@@ -111,7 +128,9 @@ export default function SimChart({
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        chart.applyOptions({ width, height });
+        if (width > 0 && height > 0) {
+          chart.applyOptions({ width, height });
+        }
       }
     });
     ro.observe(containerRef.current);
@@ -131,17 +150,88 @@ export default function SimChart({
 
     // Remove all existing series
     for (const s of seriesRef.current) {
-      chart.removeSeries(s);
+      try { chart.removeSeries(s); } catch {}
     }
     seriesRef.current = [];
 
-    // --- Historical price line ---
+    // --- 1. Outer confidence band (5th-95th percentile area) ---
+    if (result) {
+      const { dates, p5, p95, p25, p75, median } = result.paths;
+
+      // P5-P95 outer band (area between)
+      const outerTopSeries = chart.addSeries(AreaSeries, {
+        topColor: COLORS.outerBand,
+        bottomColor: "transparent",
+        lineColor: COLORS.outerLine,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      seriesRef.current.push(outerTopSeries);
+      outerTopSeries.setData(dates.map((d, i) => ({ time: d as Time, value: p95[i] })));
+
+      const outerBottomSeries = chart.addSeries(AreaSeries, {
+        topColor: "transparent",
+        bottomColor: COLORS.outerBand,
+        lineColor: COLORS.outerLine,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      seriesRef.current.push(outerBottomSeries);
+      outerBottomSeries.setData(dates.map((d, i) => ({ time: d as Time, value: p5[i] })));
+
+      // P25-P75 inner band
+      const innerTopSeries = chart.addSeries(AreaSeries, {
+        topColor: COLORS.innerBand,
+        bottomColor: "transparent",
+        lineColor: COLORS.innerLine,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      seriesRef.current.push(innerTopSeries);
+      innerTopSeries.setData(dates.map((d, i) => ({ time: d as Time, value: p75[i] })));
+
+      const innerBottomSeries = chart.addSeries(AreaSeries, {
+        topColor: "transparent",
+        bottomColor: COLORS.innerBand,
+        lineColor: COLORS.innerLine,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      seriesRef.current.push(innerBottomSeries);
+      innerBottomSeries.setData(dates.map((d, i) => ({ time: d as Time, value: p25[i] })));
+
+      // Median projection line (prominent)
+      const medianSeries = chart.addSeries(LineSeries, {
+        color: COLORS.median,
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+      });
+      seriesRef.current.push(medianSeries);
+      medianSeries.setData(dates.map((d, i) => ({ time: d as Time, value: median[i] })));
+    }
+
+    // --- 2. Historical price line (on top of projection) ---
     const historicalSeries = chart.addSeries(LineSeries, {
       color: COLORS.historical,
       lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
+      priceLineVisible: true,
+      priceLineColor: COLORS.historical + "80",
+      priceLineStyle: LineStyle.Dotted,
+      lastValueVisible: true,
       crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 4,
     });
     seriesRef.current.push(historicalSeries);
 
@@ -154,118 +244,77 @@ export default function SimChart({
       );
     }
 
-    // --- Projection series ---
-    if (result) {
-      const { dates, median, p25, p75, p5, p95 } = result.paths;
-
-      // P5 line (outer lower)
-      const p5Series = chart.addSeries(LineSeries, {
-        color: COLORS.outerBand,
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      seriesRef.current.push(p5Series);
-      p5Series.setData(dates.map((d, i) => ({ time: d as Time, value: p5[i] })));
-
-      // P95 line (outer upper)
-      const p95Series = chart.addSeries(LineSeries, {
-        color: COLORS.outerBand,
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      seriesRef.current.push(p95Series);
-      p95Series.setData(dates.map((d, i) => ({ time: d as Time, value: p95[i] })));
-
-      // P25 line (inner lower)
-      const p25Series = chart.addSeries(LineSeries, {
-        color: COLORS.innerBand,
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      seriesRef.current.push(p25Series);
-      p25Series.setData(dates.map((d, i) => ({ time: d as Time, value: p25[i] })));
-
-      // P75 line (inner upper)
-      const p75Series = chart.addSeries(LineSeries, {
-        color: COLORS.innerBand,
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      seriesRef.current.push(p75Series);
-      p75Series.setData(dates.map((d, i) => ({ time: d as Time, value: p75[i] })));
-
-      // Median (dashed, prominent)
-      const medianSeries = chart.addSeries(LineSeries, {
-        color: COLORS.median,
-        lineWidth: 2,
-        lineStyle: LineStyle.Dashed,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: true,
-      });
-      seriesRef.current.push(medianSeries);
-      medianSeries.setData(dates.map((d, i) => ({ time: d as Time, value: median[i] })));
-
-      // "Now" vertical line — two-point tall line series
-      const todayStr = new Date().toISOString().split("T")[0];
-      const allPrices = [
-        ...stock.historicalPrices.map((p) => p.price),
-        ...p5,
-        ...p95,
-      ];
-      const priceMin = Math.min(...allPrices) * 0.95;
-      const priceMax = Math.max(...allPrices) * 1.05;
-
-      const nowSeries = chart.addSeries(LineSeries, {
-        color: COLORS.white + "60",
+    // --- 3. "Today" marker via price line ---
+    if (stock.historicalPrices.length > 0) {
+      const lastPrice = stock.historicalPrices[stock.historicalPrices.length - 1].price;
+      historicalSeries.createPriceLine({
+        price: lastPrice,
+        color: COLORS.white + "40",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
+        axisLabelVisible: true,
+        title: "Now",
       });
-      seriesRef.current.push(nowSeries);
-      nowSeries.setData([
-        { time: todayStr as Time, value: priceMin },
-        { time: todayStr as Time, value: priceMax },
-      ]);
     }
 
     // Fit content then apply time range
     chart.timeScale().fitContent();
 
     const activeRange = TIME_RANGES.find((r) => r.value === timeRange) || TIME_RANGES[2];
-    if (result && result.paths.dates.length > 0) {
-      const allDates = [
-        ...(stock.historicalPrices.map((p) => p.date) || []),
-        ...result.paths.dates,
-      ];
+    const allDates: string[] = [];
+    if (stock.historicalPrices.length > 0) {
+      allDates.push(...stock.historicalPrices.map((p) => p.date));
+    }
+    if (result) {
+      allDates.push(...result.paths.dates);
+    }
+    if (allDates.length > 0) {
       const totalDays = allDates.length;
       const visibleDays = activeRange.days;
-      const fromIndex = Math.max(0, totalDays - visibleDays);
+      // Show historical + projection centered around "today"
+      const histLen = stock.historicalPrices.length;
+      const fromIndex = Math.max(0, histLen - Math.floor(visibleDays * 0.4));
+      const toIndex = Math.min(allDates.length - 1, histLen + Math.floor(visibleDays * 0.6));
       const fromDate = allDates[fromIndex];
-      const toDate = allDates[allDates.length - 1];
+      const toDate = allDates[toIndex];
 
-      if (fromDate && toDate) {
+      if (fromDate && toDate && fromDate !== toDate) {
         try {
           chart.timeScale().setVisibleRange({
             from: fromDate as Time,
             to: toDate as Time,
           });
         } catch {
-          // ignore range errors
+          chart.timeScale().fitContent();
         }
       }
     }
   }, [stock, result, timeRange]);
+
+  // Compute event zone summary for display below chart
+  const eventZones = useMemo(() => {
+    if (!events || events.length === 0 || !result) return [];
+    return events.map((e) => {
+      const breakdownItem = result.breakdown.find((b) =>
+        b.eventName.includes(e.name) || b.eventName.includes(e.emoji)
+      );
+      const impact = breakdownItem?.impact || 0;
+      const isBullish = impact >= 0;
+      const zoneColor = EVENT_ZONE_COLORS[e.category] || EVENT_ZONE_COLORS.custom;
+
+      return {
+        id: e.id,
+        emoji: e.emoji,
+        name: e.name,
+        category: e.category,
+        probability: e.probability,
+        duration: e.duration,
+        impact,
+        isBullish,
+        zoneColor,
+      };
+    });
+  }, [events, result]);
 
   return (
     <div className="w-full h-full">
@@ -287,7 +336,7 @@ export default function SimChart({
           ))}
         </div>
         <span className="text-[10px] text-neutral">
-          Scroll to zoom / Drag to pan
+          Scroll to zoom · Drag to pan
         </span>
       </div>
 
@@ -295,38 +344,73 @@ export default function SimChart({
       <div className="relative w-full min-h-[350px] sm:min-h-[450px]">
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
 
-        {/* Custom Legend */}
-        <div className="absolute top-2 left-3 z-10 flex flex-col gap-1 bg-[#0d0d14]/80 backdrop-blur-sm rounded-lg px-3 py-2 text-xs pointer-events-none">
+        {/* Legend */}
+        <div className="absolute top-2 left-3 z-10 flex flex-col gap-1 bg-[#0d0d14]/90 backdrop-blur-sm rounded-lg px-3 py-2 text-[11px] pointer-events-none">
           <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-4 h-0.5 rounded"
-              style={{ backgroundColor: COLORS.historical }}
-            />
+            <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: COLORS.historical }} />
             <span className="text-[#94a3b8]">Historical</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-4 h-0.5 rounded"
-              style={{ backgroundColor: COLORS.median, borderTop: "1px dashed #00d4aa" }}
-            />
-            <span className="text-[#94a3b8]">Median (projected)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-4 h-0.5 rounded"
-              style={{ backgroundColor: COLORS.innerBand }}
-            />
-            <span className="text-[#94a3b8]">25th-75th %ile</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-4 h-0.5 rounded"
-              style={{ backgroundColor: COLORS.outerBand }}
-            />
-            <span className="text-[#94a3b8]">5th-95th %ile</span>
-          </div>
+          {result && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-4 h-0.5 rounded border-t border-dashed" style={{ borderColor: COLORS.median, backgroundColor: "transparent" }} />
+                <span className="text-[#94a3b8]">Median projection</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-4 h-2 rounded-sm" style={{ backgroundColor: COLORS.innerBand }} />
+                <span className="text-[#94a3b8]">25-75th %ile</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-4 h-2 rounded-sm" style={{ backgroundColor: COLORS.outerBand }} />
+                <span className="text-[#94a3b8]">5-95th %ile</span>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* Probability badge overlay (top-right) */}
+        {result && (
+          <div className="absolute top-2 right-3 z-10 flex items-center gap-2">
+            <div
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold backdrop-blur-sm ${
+                result.probProfit >= 55
+                  ? "bg-[#00d4aa]/15 text-[#00d4aa]"
+                  : result.probProfit <= 45
+                  ? "bg-[#ff4757]/15 text-[#ff4757]"
+                  : "bg-[#fbbf24]/15 text-[#fbbf24]"
+              }`}
+            >
+              {result.probProfit}% profit
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Event Zone Indicators (below chart) */}
+      {eventZones.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {eventZones.map((zone) => (
+            <div
+              key={zone.id}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] border"
+              style={{
+                backgroundColor: zone.zoneColor.bg,
+                borderColor: zone.zoneColor.border,
+              }}
+            >
+              <span>{zone.emoji}</span>
+              <span className="text-[#94a3b8] max-w-[120px] truncate">{zone.name}</span>
+              <span
+                className={`font-mono font-medium ${
+                  zone.isBullish ? "text-[#00d4aa]" : "text-[#ff4757]"
+                }`}
+              >
+                {zone.isBullish ? "+" : ""}${zone.impact.toFixed(0)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
