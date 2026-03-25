@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Pre-commit hook: block commits containing potential secrets
+# Patterns: API keys, tokens, passwords, private keys
+
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+# Patterns that indicate a leaked secret
+PATTERNS=(
+  'RAILWAY_TOKEN=\S{20,}'
+  'RAILWAY_API_TOKEN=\S{20,}'
+  'vcp_[a-zA-Z0-9]{30,}'
+  'sntrys_[a-zA-Z0-9]{20,}'
+  'sk_live_[a-zA-Z0-9]{20,}'
+  'sk_test_[a-zA-Z0-9]{20,}'
+  'ghp_[a-zA-Z0-9]{20,}'
+  'gho_[a-zA-Z0-9]{20,}'
+  'PRIVATE.KEY'
+  'BEGIN RSA PRIVATE KEY'
+  'password\s*[:=]\s*["\x27][^"\x27]{8,}'
+)
+
+FOUND=0
+for file in $STAGED; do
+  # Skip binary files and known safe patterns
+  if [[ "$file" == *.png ]] || [[ "$file" == *.jpg ]] || [[ "$file" == *.lock ]]; then
+    continue
+  fi
+  
+  for pattern in "${PATTERNS[@]}"; do
+    # Only check added lines (+), skip the hook file itself
+    if [[ "$file" == ".githooks/"* ]]; then
+      continue
+    fi
+    if git diff --cached "$file" 2>/dev/null | grep '^+' | grep -v '^+++' | grep -qE "$pattern"; then
+      echo "🚨 BLOCKED: Potential secret found in $file"
+      FOUND=1
+    fi
+  done
+done
+
+if [ "$FOUND" -eq 1 ]; then
+  echo ""
+  echo "❌ Commit blocked — remove secrets before committing."
+  echo "   Use environment variables or trading/credentials.md instead."
+  echo "   To bypass (DANGEROUS): git commit --no-verify"
+  exit 1
+fi
+
+exit 0
