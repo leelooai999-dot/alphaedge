@@ -262,3 +262,58 @@ export const CATEGORY_LABELS: Record<string, string> = {
   sector: "🏭 Sector",
   custom: "✏️ Custom",
 };
+
+/**
+ * Create a custom ActiveEvent from a Polymarket search result.
+ * This lets users add ANY Polymarket market as a simulation event.
+ */
+export function createCustomEventFromPolymarket(market: {
+  question: string;
+  slug: string;
+  odds: number;
+  volume_24h: number;
+}): ActiveEvent {
+  // Generate a unique ID from the slug
+  const id = `pm_${market.slug.replace(/-/g, "_").slice(0, 60)}`;
+  
+  // Detect direction from question text
+  const q = market.question.toLowerCase();
+  const bearishWords = ["crash", "decline", "fall", "decrease", "drop", "recession", "ban", "restrict", "tariff", "war", "conflict", "invade", "sanctions"];
+  const bullishWords = ["rise", "increase", "grow", "rally", "breakthrough", "deal", "peace", "ceasefire", "cut rate", "stimulus"];
+  
+  let direction: "bullish" | "bearish" | "mixed" = "mixed";
+  let defaultImpact = 5;
+  
+  if (bearishWords.some(w => q.includes(w))) {
+    direction = "bearish";
+    defaultImpact = -5;
+  } else if (bullishWords.some(w => q.includes(w))) {
+    direction = "bullish";
+    defaultImpact = 5;
+  }
+
+  // Detect category from question
+  let category: "geopolitical" | "macro" | "sector" | "custom" = "custom";
+  const geoWords = ["war", "invade", "conflict", "military", "ceasefire", "sanctions", "nato", "nuclear"];
+  const macroWords = ["fed", "rate", "inflation", "recession", "gdp", "unemployment", "tariff", "interest"];
+  const sectorWords = ["bitcoin", "oil", "crude", "gold", "stock", "s&p", "nasdaq", "semiconductor", "ev ", "ai "];
+  
+  if (geoWords.some(w => q.includes(w))) category = "geopolitical";
+  else if (macroWords.some(w => q.includes(w))) category = "macro";
+  else if (sectorWords.some(w => q.includes(w))) category = "sector";
+
+  return {
+    id,
+    name: market.question.length > 60 ? market.question.slice(0, 57) + "..." : market.question,
+    category,
+    emoji: category === "geopolitical" ? "🌍" : category === "macro" ? "📊" : category === "sector" ? "📈" : "🔮",
+    polymarketOdds: Math.round(market.odds * 100),
+    defaultImpact,
+    defaultDuration: 30,
+    direction,
+    description: `Live from Polymarket · $${(market.volume_24h / 1e6).toFixed(1)}M 24h volume`,
+    probability: Math.round(market.odds * 100),
+    duration: 30,
+    impact: defaultImpact,
+  };
+}

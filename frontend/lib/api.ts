@@ -81,6 +81,39 @@ export async function getPolymarketLiveOdds(): Promise<
   }
 }
 
+// --- Polymarket Search ---
+
+export interface PolymarketSearchResult {
+  question: string;
+  slug: string;
+  odds: number;
+  volume_24h: number;
+  end_date: string;
+  image: string;
+  polymarket_url: string;
+}
+
+export interface PolymarketSearchResponse {
+  query: string;
+  count: number;
+  markets: PolymarketSearchResult[];
+}
+
+export async function searchPolymarket(
+  query: string,
+  limit: number = 20
+): Promise<PolymarketSearchResponse> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/polymarket/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    );
+    if (!res.ok) return { query, count: 0, markets: [] };
+    return res.json();
+  } catch {
+    return { query, count: 0, markets: [] };
+  }
+}
+
 // --- SWR fetcher helpers ---
 
 export const swrFetcher = (url: string) =>

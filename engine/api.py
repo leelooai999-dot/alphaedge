@@ -491,6 +491,20 @@ def like_scenario(scenario_id: str, req: ScenarioLike):
 
 # --- Polymarket Endpoints ---
 
+@app.get("/api/polymarket/search")
+def search_polymarket_markets(q: str, limit: int = 20):
+    """Search Polymarket for active markets matching a query.
+    
+    Example: /api/polymarket/search?q=tariff&limit=10
+    Returns markets sorted by 24h volume with odds, question, slug, etc.
+    """
+    if not q or len(q.strip()) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+    from polymarket import search_polymarket
+    results = search_polymarket(q.strip(), limit=min(limit, 50))
+    return {"query": q, "count": len(results), "markets": results}
+
+
 @app.get("/api/polymarket/live")
 def get_polymarket_live():
     """Get live Polymarket odds for all configured events."""

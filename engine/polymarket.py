@@ -201,6 +201,93 @@ def _parse_odds(market: Dict) -> float:
         return 0.5
 
 
+# ── Extended Market Cache (for search) ─────────────────────────────────────
+
+_extended_cache: Dict[str, Any] = {"data": [], "fetched_at": 0}
+_EXTENDED_TTL = 300  # 5 minutes
+
+
+def _fetch_extended_markets(pages: int = 3) -> List[Dict]:
+    """Fetch top 300+ active markets for search (paginated, cached)."""
+    if _extended_cache["data"] and (time.time() - _extended_cache["fetched_at"]) < _EXTENDED_TTL:
+        return _extended_cache["data"]
+
+    all_data = []
+    for page in range(pages):
+        try:
+            r = requests.get(
+                GAMMA_API,
+                params={
+                    "limit": 100,
+                    "offset": page * 100,
+                    "order": "volume24hr",
+                    "ascending": "false",
+                    "active": "true",
+                    "closed": "false",
+                },
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; AlphaEdge/1.0)",
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            all_data.extend(batch)
+        except Exception as e:
+            logger.warning(f"Polymarket page {page} fetch failed: {e}")
+            break
+
+    if all_data:
+        _extended_cache["data"] = all_data
+        _extended_cache["fetched_at"] = time.time()
+
+    return _extended_cache.get("data", [])
+
+
+def search_polymarket(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """
+    Search Polymarket for active markets matching a query string.
+    Returns simplified market objects suitable for the frontend.
+    Searches question text and slug. Ranks by volume.
+    """
+    markets = _fetch_extended_markets()
+    query_lower = query.lower().strip()
+    query_words = query_lower.split()
+
+    scored = []
+    for m in markets:
+        question = m.get("question", "").lower()
+        slug = m.get("slug", "").lower()
+        searchable = question + " " + slug
+
+        # Skip sports/entertainment noise for finance-focused queries
+        # (only if the query itself looks finance-related)
+        
+        # All query words must appear in question or slug
+        if not all(w in searchable for w in query_words):
+            continue
+
+        odds = _parse_odds(m)
+        vol = float(m.get("volume24hr", 0) or 0)
+
+        scored.append({
+            "question": m.get("question", ""),
+            "slug": m.get("slug", ""),
+            "odds": round(odds, 4),
+            "volume_24h": round(vol, 2),
+            "end_date": m.get("endDateIso", ""),
+            "image": m.get("image", ""),
+            "polymarket_url": f"https://polymarket.com/event/{m.get('slug', '')}",
+        })
+
+    # Sort by volume descending
+    scored.sort(key=lambda x: x["volume_24h"], reverse=True)
+    return scored[:limit]
+
+
 # ── Public API ─────────────────────────────────────────────────────────────
 
 def get_live_odds(event_key: str) -> Optional[Dict[str, Any]]:
