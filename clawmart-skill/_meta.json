@@ -1,0 +1,12 @@
+{
+  "name": "alphaedge-simulator",
+  "version": "1.0.0",
+  "description": "Monte Carlo stock event simulator — simulate how real-world events affect stock prices with temporal shaping",
+  "author": "AlphaEdge",
+  "license": "MIT",
+  "tags": ["finance", "stocks", "monte-carlo", "simulation", "trading", "options", "events", "pine-script"],
+  "category": "finance",
+  "requires": [],
+  "homepage": "https://alphaedge.vercel.app",
+  "repository": "https://github.com/leelooai999-dot/alphaedge"
+}
