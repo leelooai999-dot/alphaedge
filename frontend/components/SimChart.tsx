@@ -65,68 +65,66 @@ const EVENT_ZONE_COLORS: Record<string, { bg: string; border: string }> = {
   custom: { bg: "rgba(139, 92, 246, 0.06)", border: "rgba(139, 92, 246, 0.3)" },
 };
 
-/** Generate Pine Script for the current simulation */
+/** Generate Pine Script for the current simulation.
+ * Uses line.new() drawing approach instead of plot() since projection
+ * needs to draw FORWARD from the last bar, which plot() can't do.
+ * This approach draws the projection as line segments on the last bar.
+ */
 function generatePineScript(
   stock: StockData,
   result: SimulationResult,
   events: ActiveEvent[],
   mode: ChartMode
 ): string {
-  const { dates, median, p25, p75, p5, p95 } = result.paths;
+  const { median, p25, p75, p5, p95 } = result.paths;
   const ticker = stock.ticker;
   const currentPrice = stock.currentPrice;
-  const days = dates.length - 1;
-
-  // Calculate daily percentage moves from current price for the median
-  const medianPcts = median.map((v) => ((v - currentPrice) / currentPrice) * 100);
-  const p25Pcts = p25.map((v) => ((v - currentPrice) / currentPrice) * 100);
-  const p75Pcts = p75.map((v) => ((v - currentPrice) / currentPrice) * 100);
-  const p5Pcts = p5.map((v) => ((v - currentPrice) / currentPrice) * 100);
-  const p95Pcts = p95.map((v) => ((v - currentPrice) / currentPrice) * 100);
-
-  // Simplify to 10 data points for Pine Script (arrays limited)
-  const step = Math.max(1, Math.floor(days / 10));
-  const sampledMedian = medianPcts.filter((_, i) => i % step === 0 || i === medianPcts.length - 1).slice(0, 11);
-  const sampledP25 = p25Pcts.filter((_, i) => i % step === 0 || i === p25Pcts.length - 1).slice(0, 11);
-  const sampledP75 = p75Pcts.filter((_, i) => i % step === 0 || i === p75Pcts.length - 1).slice(0, 11);
-  const sampledP5 = p5Pcts.filter((_, i) => i % step === 0 || i === p5Pcts.length - 1).slice(0, 11);
-  const sampledP95 = p95Pcts.filter((_, i) => i % step === 0 || i === p95Pcts.length - 1).slice(0, 11);
+  const days = median.length - 1;
+  const isBullish = result.median30d >= currentPrice;
 
   const eventDescriptions = events.map(
     (e) => `// ${e.emoji} ${e.name}: ${e.probability}% probability, ${e.duration}d, ${e.impact > 0 ? "+" : ""}${e.impact}% impact`
   ).join("\n");
 
-  const medianArr = `array.from(${sampledMedian.map((v) => v.toFixed(2)).join(", ")})`;
-  const isBullish = result.median30d >= currentPrice;
+  // Sample down to ~20 points for line segments
+  const sampleStep = Math.max(1, Math.floor(days / 20));
+  const sample = (arr: number[]) =>
+    arr.filter((_, i) => i % sampleStep === 0 || i === arr.length - 1)
+      .map((v) => v.toFixed(2));
 
-  let bandLines = "";
+  const medianSampled = sample(median);
+  const p25Sampled = sample(p25);
+  const p75Sampled = sample(p75);
+  const p5Sampled = sample(p5);
+  const p95Sampled = sample(p95);
+  const numPoints = medianSampled.length;
+  const barsBetween = sampleStep;
+
+  // Build the line drawing code for bands
+  let bandDrawing = "";
   if (mode === "bands") {
-    bandLines = `
-// Confidence bands
-float p25_pct = get_projected_pct(p25_vals, bar_offset, horizon)
-float p75_pct = get_projected_pct(p75_vals, bar_offset, horizon)
-float p5_pct = get_projected_pct(p5_vals, bar_offset, horizon)
-float p95_pct = get_projected_pct(p95_vals, bar_offset, horizon)
-
-float p25_price = anchor_price * (1 + p25_pct / 100)
-float p75_price = anchor_price * (1 + p75_pct / 100)
-float p5_price = anchor_price * (1 + p5_pct / 100)
-float p95_price = anchor_price * (1 + p95_pct / 100)
-
-var p25_arr = array.from(${sampledP25.map((v) => v.toFixed(2)).join(", ")})
-var p75_arr = array.from(${sampledP75.map((v) => v.toFixed(2)).join(", ")})
-var p5_arr = array.from(${sampledP5.map((v) => v.toFixed(2)).join(", ")})
-var p95_arr = array.from(${sampledP95.map((v) => v.toFixed(2)).join(", ")})
-
-p25_line = plot(show_bands ? anchor_price * (1 + get_projected_pct(p25_arr, bar_offset, horizon) / 100) : na, "P25", color=color.new(proj_color, 70), linewidth=1)
-p75_line = plot(show_bands ? anchor_price * (1 + get_projected_pct(p75_arr, bar_offset, horizon) / 100) : na, "P75", color=color.new(proj_color, 70), linewidth=1)
-p5_line = plot(show_bands ? anchor_price * (1 + get_projected_pct(p5_arr, bar_offset, horizon) / 100) : na, "P5", color=color.new(proj_color, 85), linewidth=1, style=plot.style_circles)
-p95_line = plot(show_bands ? anchor_price * (1 + get_projected_pct(p95_arr, bar_offset, horizon) / 100) : na, "P95", color=color.new(proj_color, 85), linewidth=1, style=plot.style_circles)
-fill(p25_line, p75_line, color=color.new(proj_color, 88), title="25-75 Band")
-fill(p5_line, p95_line, color=color.new(proj_color, 94), title="5-95 Band")`;
+    bandDrawing = `
+    // Inner band (P25-P75)
+    float[] p25_vals = array.from(${p25Sampled.join(", ")})
+    float[] p75_vals = array.from(${p75Sampled.join(", ")})
+    for i = 0 to array.size(p25_vals) - 2
+        int x1 = bar_index + i * bars_per_step
+        int x2 = bar_index + (i + 1) * bars_per_step
+        line.new(x1, array.get(p25_vals, i), x2, array.get(p25_vals, i + 1), color=color.new(proj_color, 70), width=1)
+        line.new(x1, array.get(p75_vals, i), x2, array.get(p75_vals, i + 1), color=color.new(proj_color, 70), width=1)
+        // Fill between with linefill
+    
+    // Outer band (P5-P95)
+    float[] p5_vals = array.from(${p5Sampled.join(", ")})
+    float[] p95_vals = array.from(${p95Sampled.join(", ")})
+    for i = 0 to array.size(p5_vals) - 2
+        int x1 = bar_index + i * bars_per_step
+        int x2 = bar_index + (i + 1) * bars_per_step
+        line.new(x1, array.get(p5_vals, i), x2, array.get(p5_vals, i + 1), color=color.new(proj_color, 85), width=1, style=line.style_dotted)
+        line.new(x1, array.get(p95_vals, i), x2, array.get(p95_vals, i + 1), color=color.new(proj_color, 85), width=1, style=line.style_dotted)`;
   }
 
-  return `//@version=6
+  return `//@version=5
 // ═══════════════════════════════════════════════════════════════
 // AlphaEdge Event Simulation — ${ticker}
 // Generated by AlphaEdge.io — Live event-driven stock simulation
@@ -140,46 +138,38 @@ ${eventDescriptions}
 //
 // 🔗 Create your own: https://alphaedge.io/sim/${ticker}
 //
-indicator("AlphaEdge: ${ticker} Event Simulation", overlay=true, max_bars_back=500)
+indicator("AlphaEdge: ${ticker} Event Simulation", overlay=true, max_bars_back=500, max_lines_count=500)
 
 // ── Inputs ──
-horizon     = input.int(${days}, "Projection Horizon (bars)", minval=5, maxval=365)
 show_bands  = input.bool(${mode === "bands"}, "Show Confidence Bands")
 proj_color  = input.color(${isBullish ? "color.teal" : "color.red"}, "Projection Color")
 
-// ── Median projection data (% change from anchor) ──
-var median_vals = ${medianArr}
+// ── Projection data (absolute prices sampled from Monte Carlo) ──
+float[] median_vals = array.from(${medianSampled.join(", ")})
 
-// ── Helper: interpolate projected % at current bar offset ──
-get_projected_pct(arr, offset, total_bars) =>
-    if offset < 0 or offset > total_bars
-        na
-    else
-        float frac = offset / total_bars * (array.size(arr) - 1)
-        int idx = math.floor(frac)
-        float t = frac - idx
-        float v0 = array.get(arr, math.min(idx, array.size(arr) - 1))
-        float v1 = array.get(arr, math.min(idx + 1, array.size(arr) - 1))
-        v0 + (v1 - v0) * t
+int bars_per_step = ${barsBetween}
 
-// ── Detect anchor bar (last confirmed bar when script loads) ──
-var float anchor_price = na
-var int anchor_bar = na
+// ── Draw projection on the LAST bar using line.new() ──
+// This draws forward from the current bar into the future
 if barstate.islast
-    anchor_price := close
-    anchor_bar := bar_index
-
-int bar_offset = bar_index - anchor_bar
-
-// ── Plot median projection ──
-float median_pct = get_projected_pct(median_vals, bar_offset, horizon)
-float median_price = anchor_price * (1 + median_pct / 100)
-
-plot(bar_offset >= 0 and bar_offset <= horizon ? median_price : na, "Median", color=proj_color, linewidth=2, style=plot.style_line)
-${bandLines}
-
-// ── Info table ──
-if barstate.islast
+    // Draw median projection line segments
+    for i = 0 to array.size(median_vals) - 2
+        int x1 = bar_index + i * bars_per_step
+        int x2 = bar_index + (i + 1) * bars_per_step
+        float y1 = array.get(median_vals, i)
+        float y2 = array.get(median_vals, i + 1)
+        line.new(x1, y1, x2, y2, color=proj_color, width=2, extend=extend.none)
+    
+    // Target price label at the end
+    float target = array.get(median_vals, array.size(median_vals) - 1)
+    int target_x = bar_index + (array.size(median_vals) - 1) * bars_per_step
+    label.new(target_x, target, "$" + str.tostring(target, "#.00"), color=color.new(proj_color, 80), textcolor=proj_color, style=label.style_label_left, size=size.small)
+    
+    // Current price reference line
+    line.new(bar_index, close, bar_index + (array.size(median_vals) - 1) * bars_per_step, close, color=color.new(color.gray, 70), width=1, style=line.style_dashed)
+${bandDrawing}
+    
+    // Info table
     var table info = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80), border_width=1)
     table.cell(info, 0, 0, "AlphaEdge", text_color=proj_color, text_size=size.small)
     table.cell(info, 1, 0, "${ticker}", text_color=color.white, text_size=size.small)

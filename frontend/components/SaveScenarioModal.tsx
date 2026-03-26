@@ -55,7 +55,7 @@ export default function SaveScenarioModal({
       // Save author name for next time
       if (authorName) localStorage.setItem("alphaedge_author", authorName);
 
-      const tags = [...new Set(events.map((e) => e.category))].join(",");
+      const tags = Array.from(new Set(events.map((e) => e.category))).join(",");
 
       const res = await fetch(`${API_BASE}/api/scenarios`, {
         method: "POST",
