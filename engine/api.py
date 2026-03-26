@@ -65,6 +65,7 @@ class EventInput(BaseModel):
     id: str
     params: Dict[str, float] = {}
     probability: float = 1.0
+    event_date: Optional[str] = None  # v5: ISO date string for temporal shaping
 
 
 class SimulateRequest(BaseModel):
@@ -352,7 +353,8 @@ def run_simulation(req: SimulateRequest):
     # Run main simulation with events (pass cached price/vol to skip yfinance)
     result = simulation.simulate(
         ticker=ticker,
-        events=[{"id": e.id, "params": e.params, "probability": e.probability} for e in req.events],
+        events=[{"id": e.id, "params": e.params, "probability": e.probability,
+                 "event_date": e.event_date} for e in req.events],
         horizon_days=req.horizon_days,
         n_simulations=n_sim,
         seed=42,
@@ -520,6 +522,194 @@ def get_polymarket_event(event_key: str):
     if not data:
         raise HTTPException(404, f"No Polymarket market found for event '{event_key}'")
     return data
+
+
+# --- Auth Endpoints (v5 — optional registration) ---
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    session_id: Optional[str] = None  # migrate anonymous data
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@app.post("/api/auth/register")
+def register(req: RegisterRequest):
+    """Register a new user. All features still work without registration."""
+    import auth
+    try:
+        result = auth.create_user(
+            email=req.email,
+            password=req.password,
+            display_name=req.display_name,
+            session_id=req.session_id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Registration failed: {str(e)}")
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest):
+    """Login with email + password. Returns auth token."""
+    import auth
+    result = auth.login_user(req.email, req.password)
+    if not result:
+        raise HTTPException(401, "Invalid email or password")
+    return result
+
+
+@app.get("/api/auth/me")
+def get_current_user(authorization: Optional[str] = None):
+    """Get current user from auth token. Returns user profile or 401."""
+    if not authorization:
+        raise HTTPException(401, "No auth token provided")
+    token = authorization.replace("Bearer ", "")
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid or expired token")
+    # Add user stats
+    stats = auth.get_user_stats(user["user_id"])
+    return {**user, **stats}
+
+
+@app.patch("/api/auth/profile")
+def update_profile(req: ProfileUpdate, authorization: Optional[str] = None):
+    """Update user profile. Requires auth token."""
+    if not authorization:
+        raise HTTPException(401, "No auth token")
+    token = authorization.replace("Bearer ", "")
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    auth.update_user_profile(
+        user["user_id"],
+        display_name=req.display_name,
+        bio=req.bio,
+        avatar_url=req.avatar_url,
+    )
+    return {"status": "updated"}
+
+
+@app.post("/api/auth/logout")
+def logout(authorization: Optional[str] = None):
+    """Logout (invalidate token)."""
+    if authorization:
+        token = authorization.replace("Bearer ", "")
+        import auth
+        auth.logout_user(token)
+    return {"status": "ok"}
+
+
+# --- Calendar Endpoints (v5) ---
+
+@app.get("/api/calendar/fomc")
+def get_fomc_calendar(year: Optional[int] = None, limit: int = 3):
+    """Get FOMC meeting dates."""
+    from event_calendar import get_fomc_dates, get_upcoming_fomc_dates, get_next_fomc_date
+    if year:
+        return {"dates": get_fomc_dates(year)}
+    return {
+        "next": get_next_fomc_date(),
+        "upcoming": get_upcoming_fomc_dates(limit),
+    }
+
+
+@app.get("/api/calendar/earnings/{ticker}")
+def get_earnings_calendar(ticker: str):
+    """Get next earnings date for a ticker."""
+    from event_calendar import get_next_earnings_date
+    earnings_date = get_next_earnings_date(ticker.upper())
+    return {
+        "ticker": ticker.upper(),
+        "next_earnings_date": earnings_date,
+    }
+
+
+# --- Feedback Endpoints (v5) ---
+
+class FeedbackEvent(BaseModel):
+    session_id: Optional[str] = None
+    event_type: str
+    event_data: Optional[Dict[str, Any]] = None
+    page: Optional[str] = None
+    viewport: Optional[str] = None
+
+
+class SurveyResponse(BaseModel):
+    session_id: Optional[str] = None
+    rating: int  # 1-5
+    comment: Optional[str] = None
+    trigger_context: Optional[str] = None
+
+
+class WidgetFeedback(BaseModel):
+    session_id: Optional[str] = None
+    category: str  # bug, feature, event, general
+    message: str
+    page: Optional[str] = None
+
+
+@app.post("/api/feedback/event")
+def submit_feedback_event(req: FeedbackEvent):
+    """Record an implicit behavioral event (fire-and-forget)."""
+    import feedback
+    feedback.record_event(
+        event_type=req.event_type,
+        event_data=req.event_data,
+        session_id=req.session_id,
+        page=req.page,
+        viewport=req.viewport,
+    )
+    return {"status": "ok"}
+
+
+@app.post("/api/feedback/survey")
+def submit_survey(req: SurveyResponse):
+    """Record a micro-survey response."""
+    import feedback
+    feedback.record_survey(
+        rating=req.rating,
+        comment=req.comment,
+        trigger_context=req.trigger_context,
+        session_id=req.session_id,
+    )
+    return {"status": "ok"}
+
+
+@app.post("/api/feedback/widget")
+def submit_widget_feedback(req: WidgetFeedback):
+    """Record a feedback widget submission."""
+    import feedback
+    feedback.record_widget_feedback(
+        category=req.category,
+        message=req.message,
+        session_id=req.session_id,
+        page=req.page,
+    )
+    return {"status": "ok"}
+
+
+@app.get("/api/feedback/stats")
+def get_feedback_stats(days: int = 7):
+    """Get feedback summary (admin endpoint)."""
+    import feedback
+    return feedback.get_feedback_stats(days=days)
 
 
 @app.get("/health")

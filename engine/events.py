@@ -28,6 +28,107 @@ class EventParameter:
 
 
 @dataclass
+class TemporalProfile:
+    """Defines how an event's impact evolves over time relative to event_date.
+    
+    When event_date is set, the simulation uses this profile to shape
+    the drift/vol/jump dynamics: anticipation → shock → decay.
+    When event_date is None, the v4 flat-drift behavior applies.
+    """
+    # Pre-event (anticipation phase)
+    anticipation_days: int = 0            # Days before event that market starts pricing in
+    anticipation_curve: str = "linear"    # "linear" | "exponential" | "step"
+    anticipation_vol_ramp: float = 1.0    # Peak vol multiplier during anticipation (1.0 = no change)
+
+    # Event day (shock / jump)
+    jump_probability: float = 0.0         # Probability of a discrete price gap [0-1]
+    jump_mean: float = 0.0                # Expected jump magnitude (signed, in %)
+    jump_std: float = 0.0                 # Jump standard deviation (in %)
+
+    # Post-event (decay / regime shift)
+    decay_halflife_days: int = 30         # How quickly drift impact fades
+    regime_shift: float = 0.0             # Fraction of impact that's permanent [0-1]
+    post_vol_decay: float = 0.5           # How quickly vol normalizes [0=instant, 1=never]
+
+
+# ---------------------------------------------------------------------------
+# Pre-built temporal profiles for common event archetypes
+# ---------------------------------------------------------------------------
+
+TEMPORAL_FOMC = TemporalProfile(
+    anticipation_days=21, anticipation_curve="exponential", anticipation_vol_ramp=1.15,
+    jump_probability=0.95, jump_mean=0.0, jump_std=1.2,
+    decay_halflife_days=10, regime_shift=0.30, post_vol_decay=0.7,
+)
+
+TEMPORAL_EARNINGS = TemporalProfile(
+    anticipation_days=5, anticipation_curve="step", anticipation_vol_ramp=1.60,
+    jump_probability=0.99, jump_mean=0.0, jump_std=8.0,
+    decay_halflife_days=3, regime_shift=0.60, post_vol_decay=0.2,
+)
+
+TEMPORAL_GEOPOLITICAL = TemporalProfile(
+    anticipation_days=3, anticipation_curve="linear", anticipation_vol_ramp=1.10,
+    jump_probability=0.80, jump_mean=0.0, jump_std=3.0,
+    decay_halflife_days=30, regime_shift=0.10, post_vol_decay=0.6,
+)
+
+TEMPORAL_GEOPOLITICAL_SUDDEN = TemporalProfile(
+    anticipation_days=0, anticipation_curve="step", anticipation_vol_ramp=1.0,
+    jump_probability=0.85, jump_mean=0.0, jump_std=4.0,
+    decay_halflife_days=30, regime_shift=0.10, post_vol_decay=0.6,
+)
+
+TEMPORAL_TARIFF = TemporalProfile(
+    anticipation_days=7, anticipation_curve="linear", anticipation_vol_ramp=1.12,
+    jump_probability=0.70, jump_mean=0.0, jump_std=2.0,
+    decay_halflife_days=14, regime_shift=0.50, post_vol_decay=0.5,
+)
+
+TEMPORAL_OIL_DISRUPTION = TemporalProfile(
+    anticipation_days=1, anticipation_curve="step", anticipation_vol_ramp=1.05,
+    jump_probability=0.90, jump_mean=0.0, jump_std=5.0,
+    decay_halflife_days=60, regime_shift=0.20, post_vol_decay=0.6,
+)
+
+TEMPORAL_REGULATORY = TemporalProfile(
+    anticipation_days=14, anticipation_curve="linear", anticipation_vol_ramp=1.10,
+    jump_probability=0.60, jump_mean=0.0, jump_std=3.0,
+    decay_halflife_days=21, regime_shift=0.70, post_vol_decay=0.4,
+)
+
+TEMPORAL_RECESSION = TemporalProfile(
+    anticipation_days=30, anticipation_curve="exponential", anticipation_vol_ramp=1.25,
+    jump_probability=0.50, jump_mean=-2.0, jump_std=3.0,
+    decay_halflife_days=90, regime_shift=0.60, post_vol_decay=0.8,
+)
+
+TEMPORAL_INFLATION = TemporalProfile(
+    anticipation_days=7, anticipation_curve="linear", anticipation_vol_ramp=1.08,
+    jump_probability=0.65, jump_mean=0.0, jump_std=1.5,
+    decay_halflife_days=30, regime_shift=0.40, post_vol_decay=0.5,
+)
+
+TEMPORAL_SUPPLY_CHAIN = TemporalProfile(
+    anticipation_days=3, anticipation_curve="linear", anticipation_vol_ramp=1.08,
+    jump_probability=0.70, jump_mean=0.0, jump_std=2.5,
+    decay_halflife_days=45, regime_shift=0.25, post_vol_decay=0.6,
+)
+
+TEMPORAL_PHARMA = TemporalProfile(
+    anticipation_days=10, anticipation_curve="exponential", anticipation_vol_ramp=1.30,
+    jump_probability=0.95, jump_mean=0.0, jump_std=6.0,
+    decay_halflife_days=5, regime_shift=0.70, post_vol_decay=0.3,
+)
+
+TEMPORAL_CRE_CRISIS = TemporalProfile(
+    anticipation_days=14, anticipation_curve="linear", anticipation_vol_ramp=1.15,
+    jump_probability=0.50, jump_mean=-1.5, jump_std=3.0,
+    decay_halflife_days=60, regime_shift=0.40, post_vol_decay=0.7,
+)
+
+
+@dataclass
 class SectorImpact:
     """How an event affects a single sector."""
     drift: float          # daily drift adjustment (e.g. 0.002 = +0.2% per day)
@@ -46,6 +147,8 @@ class Event:
     probability: float = 0.5           # 0-1, base probability (can be overridden by Polymarket)
     parameters: dict[str, EventParameter] = field(default_factory=dict)
     sector_impacts: dict[str, SectorImpact] = field(default_factory=dict)
+    temporal_profile: Optional[TemporalProfile] = None   # v5: temporal shaping
+    event_date: Optional[str] = None                     # v5: ISO date when event occurs
 
     # --- convenience --------------------------------------------------------
 
@@ -78,11 +181,13 @@ class Event:
             probability=self.probability,
             parameters=dict(self.parameters),
             sector_impacts=new_impacts,
+            temporal_profile=self.temporal_profile,
+            event_date=self.event_date,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialise for API responses."""
-        return {
+        d: Dict[str, Any] = {
             "key": self.key,
             "name": self.name,
             "category": self.category,
@@ -100,6 +205,22 @@ class Event:
                 for k, v in self.sector_impacts.items()
             },
         }
+        if self.temporal_profile:
+            tp = self.temporal_profile
+            d["temporal_profile"] = {
+                "anticipation_days": tp.anticipation_days,
+                "anticipation_curve": tp.anticipation_curve,
+                "anticipation_vol_ramp": tp.anticipation_vol_ramp,
+                "jump_probability": tp.jump_probability,
+                "jump_mean": tp.jump_mean,
+                "jump_std": tp.jump_std,
+                "decay_halflife_days": tp.decay_halflife_days,
+                "regime_shift": tp.regime_shift,
+                "post_vol_decay": tp.post_vol_decay,
+            }
+        if self.event_date:
+            d["event_date"] = self.event_date
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +255,7 @@ EVENTS: Dict[str, Event] = {
             "transportation": SectorImpact(drift=-0.0010, vol_multiplier=1.12),
             "healthcare": SectorImpact(drift=-0.0002, vol_multiplier=1.05),
         },
+        temporal_profile=TEMPORAL_GEOPOLITICAL,
     ),
     "china_taiwan": Event(
         key="china_taiwan",
@@ -156,6 +278,7 @@ EVENTS: Dict[str, Event] = {
             "automotive": SectorImpact(drift=-0.0020, vol_multiplier=1.25),
             "industrial": SectorImpact(drift=-0.0010, vol_multiplier=1.15),
         },
+        temporal_profile=TEMPORAL_GEOPOLITICAL_SUDDEN,
     ),
     "ukraine_russia": Event(
         key="ukraine_russia",
@@ -177,6 +300,7 @@ EVENTS: Dict[str, Event] = {
             "financials": SectorImpact(drift=-0.0005, vol_multiplier=1.10),
             "metals": SectorImpact(drift=0.0010, vol_multiplier=1.20),
         },
+        temporal_profile=TEMPORAL_GEOPOLITICAL,
     ),
     "north_korea": Event(
         key="north_korea",
@@ -195,6 +319,7 @@ EVENTS: Dict[str, Event] = {
             "technology": SectorImpact(drift=-0.0008, vol_multiplier=1.10),
             "consumer": SectorImpact(drift=-0.0005, vol_multiplier=1.08),
         },
+        temporal_profile=TEMPORAL_GEOPOLITICAL_SUDDEN,
     ),
 
     # ---- Macro Economic ---------------------------------------------------
@@ -218,6 +343,7 @@ EVENTS: Dict[str, Event] = {
             "utilities": SectorImpact(drift=0.0003, vol_multiplier=0.95),
             "growth": SectorImpact(drift=0.0012, vol_multiplier=0.96),
         },
+        temporal_profile=TEMPORAL_FOMC,
     ),
     "fed_rate_hike": Event(
         key="fed_rate_hike",
@@ -239,6 +365,7 @@ EVENTS: Dict[str, Event] = {
             "utilities": SectorImpact(drift=-0.0004, vol_multiplier=1.05),
             "growth": SectorImpact(drift=-0.0012, vol_multiplier=1.08),
         },
+        temporal_profile=TEMPORAL_FOMC,
     ),
     "recession": Event(
         key="recession",
@@ -262,6 +389,7 @@ EVENTS: Dict[str, Event] = {
             "healthcare": SectorImpact(drift=-0.0002, vol_multiplier=1.05),
             "real_estate": SectorImpact(drift=-0.0020, vol_multiplier=1.30),
         },
+        temporal_profile=TEMPORAL_RECESSION,
     ),
     "inflation_spike": Event(
         key="inflation_spike",
@@ -282,6 +410,7 @@ EVENTS: Dict[str, Event] = {
             "technology": SectorImpact(drift=-0.0008, vol_multiplier=1.10),
             "real_estate": SectorImpact(drift=-0.0006, vol_multiplier=1.12),
         },
+        temporal_profile=TEMPORAL_INFLATION,
     ),
 
     # ---- Trade / Tariffs --------------------------------------------------
@@ -307,6 +436,7 @@ EVENTS: Dict[str, Event] = {
             "semiconductors": SectorImpact(drift=-0.0025, vol_multiplier=1.35),
             "retail": SectorImpact(drift=-0.0012, vol_multiplier=1.15),
         },
+        temporal_profile=TEMPORAL_TARIFF,
     ),
 
     # ---- Commodity / Supply Chain ------------------------------------------
@@ -331,6 +461,7 @@ EVENTS: Dict[str, Event] = {
             "industrial": SectorImpact(drift=-0.0006, vol_multiplier=1.10),
             "airlines": SectorImpact(drift=-0.0020, vol_multiplier=1.25),
         },
+        temporal_profile=TEMPORAL_OIL_DISRUPTION,
     ),
     "chip_export_control": Event(
         key="chip_export_control",
@@ -351,6 +482,7 @@ EVENTS: Dict[str, Event] = {
             "industrial": SectorImpact(drift=-0.0008, vol_multiplier=1.12),
             "defense": SectorImpact(drift=0.0005, vol_multiplier=1.05),
         },
+        temporal_profile=TEMPORAL_REGULATORY,
     ),
     "ev_subsidy": Event(
         key="ev_subsidy",
@@ -369,6 +501,7 @@ EVENTS: Dict[str, Event] = {
             "energy": SectorImpact(drift=-0.0005, vol_multiplier=1.08),
             "technology": SectorImpact(drift=-0.0003, vol_multiplier=1.05),
         },
+        temporal_profile=TEMPORAL_REGULATORY,
     ),
     "ai_regulation": Event(
         key="ai_regulation",
@@ -386,6 +519,7 @@ EVENTS: Dict[str, Event] = {
             "technology": SectorImpact(drift=-0.0015, vol_multiplier=1.20),
             "semiconductors": SectorImpact(drift=-0.0010, vol_multiplier=1.15),
         },
+        temporal_profile=TEMPORAL_REGULATORY,
     ),
     "defense_spending": Event(
         key="defense_spending",
@@ -404,6 +538,7 @@ EVENTS: Dict[str, Event] = {
             "aerospace": SectorImpact(drift=0.0015, vol_multiplier=1.12),
             "technology": SectorImpact(drift=0.0003, vol_multiplier=1.02),
         },
+        temporal_profile=TEMPORAL_REGULATORY,
     ),
     "crypto_regulation": Event(
         key="crypto_regulation",
@@ -421,6 +556,7 @@ EVENTS: Dict[str, Event] = {
             "financials": SectorImpact(drift=0.0002, vol_multiplier=1.05),
             "technology": SectorImpact(drift=-0.0003, vol_multiplier=1.05),
         },
+        temporal_profile=TEMPORAL_REGULATORY,
     ),
     "pharma_breakthrough": Event(
         key="pharma_breakthrough",
@@ -438,6 +574,7 @@ EVENTS: Dict[str, Event] = {
             "biotech": SectorImpact(drift=0.0030, vol_multiplier=1.40),
             "technology": SectorImpact(drift=0.0002, vol_multiplier=1.02),
         },
+        temporal_profile=TEMPORAL_PHARMA,
     ),
     "supply_chain_crisis": Event(
         key="supply_chain_crisis",
@@ -458,6 +595,7 @@ EVENTS: Dict[str, Event] = {
             "industrial": SectorImpact(drift=-0.0008, vol_multiplier=1.12),
             "consumer": SectorImpact(drift=-0.0008, vol_multiplier=1.10),
         },
+        temporal_profile=TEMPORAL_SUPPLY_CHAIN,
     ),
     "commercial_real_estate_crisis": Event(
         key="commercial_real_estate_crisis",
@@ -476,6 +614,7 @@ EVENTS: Dict[str, Event] = {
             "real_estate": SectorImpact(drift=-0.0030, vol_multiplier=1.45),
             "industrial": SectorImpact(drift=-0.0005, vol_multiplier=1.08),
         },
+        temporal_profile=TEMPORAL_CRE_CRISIS,
     ),
 }
 
