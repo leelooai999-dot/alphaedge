@@ -949,6 +949,16 @@ def get_engagement(scenario_id: str):
     return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
 
 
+# --- Weekly Recap ---
+
+@app.post("/api/admin/weekly-recap")
+def trigger_weekly_recap():
+    """Trigger weekly recap notifications for all users. Called by cron."""
+    import social
+    count = social.generate_weekly_recaps()
+    return {"recaps_sent": count}
+
+
 # --- Badge Endpoints ---
 
 @app.get("/api/badges/{user_id}")

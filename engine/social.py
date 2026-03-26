@@ -761,5 +761,54 @@ def get_feed(
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Weekly Recap
+# ---------------------------------------------------------------------------
+
+def generate_weekly_recaps():
+    """Generate weekly recap notifications for all active users.
+    Call this weekly (e.g., Sunday night cron job)."""
+    conn = get_db()
+    recaps_sent = 0
+    try:
+        # Get all users who had scenario activity in the past 7 days
+        users = conn.execute("""
+            SELECT DISTINCT s.author_id, s.author_name,
+                COALESCE(SUM(s.views), 0) as week_views,
+                COALESCE(SUM(s.likes), 0) as week_likes,
+                COALESCE(SUM(s.forks), 0) as week_forks,
+                COUNT(*) as scenario_count
+            FROM scenarios s
+            WHERE s.author_id IS NOT NULL
+                AND s.created_at > datetime('now', '-7 days')
+            GROUP BY s.author_id
+        """).fetchall()
+        
+        for user in users:
+            views = user["week_views"]
+            likes = user["week_likes"]
+            forks = user["week_forks"]
+            
+            if views + likes + forks == 0:
+                continue
+            
+            message = f"📊 Your weekly recap: {views:,} views, {likes} likes, {forks} forks on {user['scenario_count']} scenarios this week!"
+            
+            try:
+                add_notification(user["author_id"], "weekly_recap", message, None, conn)
+                recaps_sent += 1
+            except Exception:
+                pass
+        
+        conn.commit()
+        logger.info(f"Weekly recaps sent: {recaps_sent}")
+    except Exception as e:
+        logger.warning(f"Weekly recap generation failed: {e}")
+    finally:
+        conn.close()
+    
+    return recaps_sent
+
+
 # Initialize on import
 init_social_db()

@@ -72,13 +72,13 @@ function ScenarioCard({ scenario }: { scenario: FeedScenario }) {
     <div className="bg-card border border-border rounded-xl p-4 hover:border-accent/30 transition-colors">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <Link href={scenario.author_id ? `/profile/${scenario.author_id}` : "#"} className="flex items-center gap-2 no-underline">
           <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent">
             {(scenario.author_name || "A")[0].toUpperCase()}
           </div>
-          <span className="text-sm text-white font-medium">{scenario.author_name || "Anonymous"}</span>
+          <span className="text-sm text-white font-medium hover:text-accent transition-colors">{scenario.author_name || "Anonymous"}</span>
           <span className="text-xs text-muted">· {timeAgo(scenario.created_at)}</span>
-        </div>
+        </Link>
         <span className="text-xs text-muted flex items-center gap-1">
           🔥 {Math.round(engagement)}
         </span>
