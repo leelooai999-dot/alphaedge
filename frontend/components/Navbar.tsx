@@ -175,16 +175,32 @@ export default function Navbar() {
               Explore
             </Link>
             {user ? (
-              <button
-                onClick={() => { handleLogout(); setOpen(false); }}
-                className="block py-2 text-sm text-red-400 font-medium"
-              >
-                Sign Out ({user.display_name})
-              </button>
+              <>
+                <Link
+                  href="/points"
+                  className="block py-2 text-sm text-muted hover:text-white no-underline"
+                  onClick={() => setOpen(false)}
+                >
+                  🪙 Points ({user.points || 0})
+                </Link>
+                <Link
+                  href={`/profile/${user.id}`}
+                  className="block py-2 text-sm text-muted hover:text-white no-underline"
+                  onClick={() => setOpen(false)}
+                >
+                  👤 My Profile
+                </Link>
+                <button
+                  onClick={() => { handleLogout(); setOpen(false); }}
+                  className="block py-2 text-sm text-red-400 font-medium bg-transparent border-0 cursor-pointer"
+                >
+                  Sign Out ({user.display_name})
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => { setShowAuth(true); setOpen(false); }}
-                className="block py-2 text-sm text-accent font-medium"
+                className="block py-2 text-sm text-accent font-medium bg-transparent border-0 cursor-pointer"
               >
                 Sign In / Register
               </button>

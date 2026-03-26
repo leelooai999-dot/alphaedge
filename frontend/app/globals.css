@@ -104,3 +104,36 @@ input[type="range"]::-moz-range-thumb {
 .live-dot {
   animation: pulse-dot 2s ease-in-out infinite;
 }
+
+/* Mobile responsive fixes */
+@media (max-width: 640px) {
+  /* Feed cards: tighter padding on mobile */
+  .bg-card { padding: 0.75rem; }
+  
+  /* Nav: smaller logo, compact */
+  nav { padding-left: 0.75rem; padding-right: 0.75rem; }
+  
+  /* Tables: horizontal scroll */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  
+  /* Chart: reduce min height */
+  .chart-container { min-height: 280px; }
+  
+  /* Hide engagement score on very small screens */
+  .hide-mobile { display: none; }
+  
+  /* Stack sliders vertically */
+  .slider-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 480px) {
+  /* Extra small: even tighter */
+  main { padding-left: 0.5rem; padding-right: 0.5rem; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1rem; }
+}
+
+/* Safe area for iOS notch */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
