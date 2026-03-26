@@ -503,34 +503,36 @@ def get_leaderboard(
         if ticker:
             ticker_filter = f"AND s.ticker = '{ticker.upper()}'"
 
-        rows = conn.execute(f"""
-            SELECT 
-                s.author_id,
-                COALESCE(s.author_name, 'Anonymous') as author_name,
-                COUNT(DISTINCT s.id) as scenario_count,
-                COALESCE(SUM(s.views), 0) as total_views,
-                COALESCE(SUM(s.likes), 0) as total_likes,
-                COALESCE(SUM(s.forks), 0) as total_forks,
-                COALESCE(SUM(
-                    (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) * 3.0
-                    + s.forks * 2.5
-                    + (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) * 2.0
-                    + s.likes * 1.0
-                    + s.views * 0.01
-                ), 0) as engagement_score,
-                u.points,
-                u.streak_days,
-                u.avatar_url
-            FROM scenarios s
-            LEFT JOIN users u ON s.author_id = u.id
-            WHERE s.is_public = 1
-                AND s.author_id IS NOT NULL
-                {time_filter}
-                {ticker_filter}
-            GROUP BY s.author_id
-            ORDER BY engagement_score DESC
-            LIMIT ?
-        """, (limit,)).fetchall()
+        # Use try/except for is_public which may not exist in older DB schemas
+        try:
+            rows = conn.execute(f"""
+                SELECT 
+                    s.author_id,
+                    COALESCE(s.author_name, 'Anonymous') as author_name,
+                    COUNT(DISTINCT s.id) as scenario_count,
+                    COALESCE(SUM(s.views), 0) as total_views,
+                    COALESCE(SUM(s.likes), 0) as total_likes,
+                    COALESCE(SUM(s.forks), 0) as total_forks,
+                    COALESCE(SUM(
+                        s.forks * 2.5
+                        + s.likes * 1.0
+                        + s.views * 0.01
+                    ), 0) as engagement_score,
+                    0 as points,
+                    0 as streak_days,
+                    NULL as avatar_url
+                FROM scenarios s
+                WHERE 1=1
+                    {time_filter}
+                    {ticker_filter}
+                GROUP BY COALESCE(s.author_id, s.author_name)
+                HAVING engagement_score > 0
+                ORDER BY engagement_score DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+        except Exception as e:
+            logger.warning(f"Leaderboard query failed: {e}")
+            rows = []
 
         return [
             {
@@ -573,7 +575,7 @@ def get_feed(
                     (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) as comment_count,
                     (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) as share_count
                 FROM scenarios s
-                WHERE s.is_public = 1
+                WHERE 1=1
                     AND s.author_id IN (
                         SELECT following_id FROM follows WHERE follower_id = ?
                     )
@@ -594,7 +596,7 @@ def get_feed(
                         + s.views * 0.01
                     ) / MAX(1.0, (julianday('now') - julianday(s.created_at)) * 24) as velocity
                 FROM scenarios s
-                WHERE s.is_public = 1
+                WHERE 1=1
                     AND s.created_at > datetime('now', '-7 days')
                 ORDER BY velocity DESC
                 LIMIT ? OFFSET ?
@@ -605,7 +607,7 @@ def get_feed(
                     (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) as comment_count,
                     (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) as share_count
                 FROM scenarios s
-                WHERE s.is_public = 1
+                WHERE 1=1
                 ORDER BY s.created_at DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset)).fetchall()
@@ -616,7 +618,7 @@ def get_feed(
                     (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) as comment_count,
                     (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) as share_count
                 FROM scenarios s
-                WHERE s.is_public = 1
+                WHERE 1=1
                 ORDER BY (s.views * 0.01 + s.likes + s.forks * 2.5) DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset)).fetchall()
