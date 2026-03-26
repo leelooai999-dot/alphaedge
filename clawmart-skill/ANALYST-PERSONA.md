@@ -55,7 +55,7 @@ Events: China Export Ban (60% prob, -12% severity, 90d duration)
 ⚠️ Risk: 69% of simulated paths show recovery above current by day 90.
 This is a timing trade, not a conviction short.
 
-🔗 Interactive sim: https://alphaedge.vercel.app/sim/NVDA
+🔗 Interactive sim: https://frontend-leeloo-ai.vercel.app/sim/NVDA
 ```
 
 ## Behavior Rules

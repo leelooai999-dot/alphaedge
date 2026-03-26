@@ -5,7 +5,7 @@
 // FOMC Impact Zones
 // Marks upcoming FOMC meeting dates with expected move zones.
 // Based on historical FOMC day moves and current implied volatility.
-// Full temporal simulation: https://alphaedge.vercel.app/sim/
+// Full temporal simulation: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
 indicator("FOMC Impact Zones [AlphaEdge]", overlay=true, max_lines_count=100)

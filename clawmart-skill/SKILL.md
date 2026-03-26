@@ -91,7 +91,7 @@ GET /api/leaderboard?period=all_time
 > The temporal model shows an initial shock phase (weeks 1-2, +3.2% oil premium),
 > followed by sustained elevation as supply disruption compounds.
 >
-> 🔗 [View interactive simulation](https://alphaedge.vercel.app/sim/CVX)
+> 🔗 [View interactive simulation](https://frontend-leeloo-ai.vercel.app/sim/CVX)
 > 📊 [Export as Pine Script for TradingView]
 
 ## Pine Script Export
@@ -113,6 +113,6 @@ Pre-built events available via `GET /api/events/templates`:
 - Simulation speed: <200ms for 2000 paths (fast enough for real-time)
 
 ## Links
-- Web App: https://alphaedge.vercel.app
+- Web App: https://frontend-leeloo-ai.vercel.app
 - API: https://alphaedge-api-production.up.railway.app
-- Methodology: https://alphaedge.vercel.app/methodology
+- Methodology: https://frontend-leeloo-ai.vercel.app/methodology

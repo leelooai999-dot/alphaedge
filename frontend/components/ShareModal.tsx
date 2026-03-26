@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const SITE_URL = "https://alphaedge.vercel.app";
+const SITE_URL = "https://frontend-leeloo-ai.vercel.app";
 
 interface Props {
   scenarioId: string;

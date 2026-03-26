@@ -5,7 +5,7 @@
 // Monte Carlo Confidence Bands
 // Approximates Monte Carlo simulation confidence intervals using
 // historical volatility + geometric Brownian motion.
-// For full Monte Carlo with event simulation: https://alphaedge.vercel.app/sim/
+// For full Monte Carlo with event simulation: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
 indicator("Monte Carlo Bands [AlphaEdge]", overlay=true, max_lines_count=500)

@@ -5,7 +5,7 @@
 // Geopolitical Risk Overlay
 // Measures relative strength between defense/energy sectors and SPY
 // to detect geopolitical risk sentiment in the market.
-// Full geopolitical event simulation: https://alphaedge.vercel.app/sim/
+// Full geopolitical event simulation: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
 indicator("Geopolitical Risk Index [AlphaEdge]", overlay=false)

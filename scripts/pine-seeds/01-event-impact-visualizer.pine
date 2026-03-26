@@ -5,7 +5,7 @@
 // Event Impact Visualizer
 // Draws forward-looking projection zones based on event probability and severity.
 // Use with AlphaEdge's Monte Carlo simulator for full scenario analysis.
-// Try it free: https://alphaedge.vercel.app/sim/
+// Try it free: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
 indicator("Event Impact Visualizer [AlphaEdge]", overlay=true, max_lines_count=500)

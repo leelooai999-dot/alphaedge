@@ -5,7 +5,7 @@
 // Earnings IV Crush Predictor
 // Shows the expected pre-earnings IV ramp and post-earnings crush zone.
 // Historical earnings day moves averaged to project expected ranges.
-// Full temporal simulation with events: https://alphaedge.vercel.app/sim/
+// Full temporal simulation with events: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
 indicator("Earnings IV Crush [AlphaEdge]", overlay=true, max_lines_count=100)

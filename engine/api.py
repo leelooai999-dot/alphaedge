@@ -998,7 +998,7 @@ def get_referral_info(user_id: str):
         referral_code = user["referral_code"] or ""
         return {
             "referral_code": referral_code,
-            "referral_link": f"https://alphaedge.vercel.app/?ref={referral_code}",
+            "referral_link": f"https://frontend-leeloo-ai.vercel.app/?ref={referral_code}",
             "referral_count": referral_count,
             "points_earned": referral_count * 50,
         }
