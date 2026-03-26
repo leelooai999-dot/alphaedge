@@ -335,20 +335,21 @@ export default function SimulatorPage() {
     return (
       <main className="min-h-screen pt-14">
         <Navbar />
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-2 bg-card rounded-2xl border border-border p-4 h-[calc(100vh-180px)] lg:h-[calc(100vh-140px)] flex flex-col overflow-hidden">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
+            {/* Chart skeleton first on mobile */}
+            <div className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4">
+              <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+                <ChartSkeleton />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                <StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton />
+              </div>
+            </div>
+            <div className="order-2 lg:order-1 lg:col-span-2 bg-card rounded-2xl border border-border p-3 sm:p-4 max-h-[50vh] lg:max-h-none lg:h-[calc(100vh-140px)] flex flex-col overflow-hidden">
               <StockSearchSkeleton />
               <div className="mt-3">
                 <EventPanelSkeleton />
-              </div>
-            </div>
-            <div className="lg:col-span-3 space-y-4">
-              <div className="bg-card rounded-2xl border border-border p-4">
-                <ChartSkeleton />
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton />
               </div>
             </div>
           </div>
@@ -366,60 +367,86 @@ export default function SimulatorPage() {
           <div className="w-full sm:w-64">
             <StockSearch currentTicker={ticker} />
           </div>
-          <div className="flex items-center gap-4 w-full sm:w-auto sm:ml-auto">
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-white text-lg">
+          <div className="flex items-center gap-3 w-full sm:w-auto sm:ml-auto">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono font-bold text-white text-lg whitespace-nowrap">
                 ${stock.currentPrice.toFixed(2)}
               </span>
-              <span className="text-xs text-muted px-2 py-0.5 bg-card rounded-md">
+              <span className="text-xs text-muted px-2 py-0.5 bg-card rounded-md whitespace-nowrap hidden sm:inline">
                 {stock.sector}
               </span>
-              {loading && <span className="text-xs text-accent animate-pulse">Simulating...</span>}
             </div>
-            <div className="flex items-center gap-2 ml-auto sm:ml-0">
+            <div className="flex items-center gap-2 ml-auto sm:ml-0 flex-shrink-0">
               <button
                 onClick={handleFullSim}
-                className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-lg hover:bg-accent/80 transition-colors"
+                className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-lg hover:bg-accent/80 transition-colors flex items-center gap-1.5 whitespace-nowrap"
                 disabled={loading}
               >
-                Run Full Sim
+                {loading && (
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                {loading ? "Simulating" : "Run Full Sim"}
               </button>
               <button
                 onClick={handleSave}
-                className="px-3 py-1.5 bg-accent/10 text-accent text-xs font-medium rounded-lg hover:bg-accent/20 transition-colors"
+                className="px-3 py-1.5 bg-accent/10 text-accent text-xs font-medium rounded-lg hover:bg-accent/20 transition-colors whitespace-nowrap hidden sm:block"
               >
-                Save Scenario
+                Save
               </button>
               <button
                 onClick={handleShare}
-                className="px-3 py-1.5 border border-border text-xs text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors"
+                className="px-3 py-1.5 border border-border text-xs text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors whitespace-nowrap hidden sm:block"
               >
                 Share
+              </button>
+              {/* Mobile: compact icon buttons for Save/Share */}
+              <button
+                onClick={handleSave}
+                className="p-1.5 bg-accent/10 text-accent rounded-lg hover:bg-accent/20 transition-colors sm:hidden"
+                title="Save Scenario"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </button>
+              <button
+                onClick={handleShare}
+                className="p-1.5 border border-border text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors sm:hidden"
+                title="Share"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-2 bg-card rounded-2xl border border-border p-4 h-[calc(100vh-180px)] lg:h-[calc(100vh-140px)] flex flex-col overflow-hidden">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
+          {/* Event panel — shows BELOW chart on mobile, LEFT on desktop */}
+          <div className="order-2 lg:order-1 lg:col-span-2 bg-card rounded-2xl border border-border p-3 sm:p-4 max-h-[50vh] lg:max-h-none lg:h-[calc(100vh-140px)] flex flex-col overflow-hidden">
             <EventPanel events={events} onEventsChange={setEvents} />
           </div>
-          <div className="lg:col-span-3 space-y-4">
-            <div className="bg-card rounded-2xl border border-border p-4">
+          {/* Chart + stats — shows FIRST on mobile */}
+          <div className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4">
+            <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
               <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
             </div>
             {result && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                 <StatCard
-                  label="30-day target"
+                  label="Target"
                   value={`$${result.median30d.toFixed(0)}`}
                   sub="median"
                   color="text-white"
                 />
                 <StatCard
-                  label="Prob. of profit"
+                  label="Prob. profit"
                   value={`${result.probProfit}%`}
                   sub=""
                   color={result.probProfit >= 50 ? "text-bullish" : "text-bearish"}
@@ -427,13 +454,13 @@ export default function SimulatorPage() {
                 <StatCard
                   label="Max drawdown"
                   value={`$${result.maxDrawdown5p.toFixed(0)}`}
-                  sub="5th percentile"
+                  sub="5th %ile"
                   color="text-bearish"
                 />
                 <StatCard
                   label="Event impact"
                   value={`${result.eventImpact >= 0 ? "+" : ""}$${result.eventImpact.toFixed(0)}`}
-                  sub="vs base case"
+                  sub="vs base"
                   color={changeColor}
                 />
               </div>
@@ -465,10 +492,10 @@ export default function SimulatorPage() {
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
-    <div className="bg-card rounded-xl border border-border p-3">
-      <div className="text-xs text-muted mb-1">{label}</div>
-      <div className={`font-mono font-bold text-lg ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-neutral mt-0.5">{sub}</div>}
+    <div className="bg-card rounded-xl border border-border p-2 sm:p-3">
+      <div className="text-[10px] sm:text-xs text-muted mb-0.5 sm:mb-1 truncate">{label}</div>
+      <div className={`font-mono font-bold text-base sm:text-lg ${color}`}>{value}</div>
+      {sub && <div className="text-[10px] sm:text-xs text-neutral mt-0.5 truncate">{sub}</div>}
     </div>
   );
 }

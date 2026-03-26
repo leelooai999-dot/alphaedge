@@ -470,15 +470,15 @@ export default function SimChart({
   return (
     <div className="w-full h-full">
       {/* Controls bar */}
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Time range */}
-          <div className="flex gap-1">
+          <div className="flex gap-0.5 sm:gap-1">
             {TIME_RANGES.map((r) => (
               <button
                 key={r.value}
                 onClick={() => onTimeRangeChange?.(r.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                className={`px-1.5 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-colors ${
                   timeRange === r.value
                     ? "bg-accent/20 text-accent"
                     : "text-muted hover:text-white hover:bg-bg"
@@ -493,10 +493,10 @@ export default function SimChart({
           <div className="w-px h-5 bg-border" />
 
           {/* Chart mode toggle */}
-          <div className="flex gap-1 bg-bg/80 rounded-lg p-0.5">
+          <div className="flex gap-0.5 sm:gap-1 bg-bg/80 rounded-lg p-0.5">
             <button
               onClick={() => setChartMode("single")}
-              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-medium transition-colors ${
                 chartMode === "single"
                   ? "bg-accent/20 text-accent"
                   : "text-muted hover:text-white"
@@ -507,7 +507,7 @@ export default function SimChart({
             </button>
             <button
               onClick={() => setChartMode("bands")}
-              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-medium transition-colors ${
                 chartMode === "bands"
                   ? "bg-accent/20 text-accent"
                   : "text-muted hover:text-white"
@@ -519,10 +519,10 @@ export default function SimChart({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Pine Script export */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Pine Script export — hide on very small screens */}
           {result && (
-            <div className="relative">
+            <div className="relative hidden sm:block">
               <button
                 onClick={() => setShowPineScript(!showPineScript)}
                 className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-muted hover:text-white hover:bg-bg transition-colors border border-border/50"
@@ -569,18 +569,18 @@ export default function SimChart({
             </div>
           )}
 
-          <span className="text-[10px] text-neutral hidden sm:inline">
+          <span className="text-[10px] text-neutral hidden md:inline">
             Scroll to zoom · Drag to pan
           </span>
         </div>
       </div>
 
       {/* Chart container */}
-      <div className="relative w-full min-h-[350px] sm:min-h-[450px]">
+      <div className="relative w-full min-h-[280px] sm:min-h-[350px] md:min-h-[450px]">
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
 
         {/* Legend — simplified for single mode */}
-        <div className="absolute top-2 left-3 z-10 flex flex-col gap-1 bg-[#0d0d14]/90 backdrop-blur-sm rounded-lg px-3 py-2 text-[11px] pointer-events-none">
+        <div className="absolute top-2 left-2 sm:left-3 z-10 flex flex-col gap-0.5 sm:gap-1 bg-[#0d0d14]/90 backdrop-blur-sm rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-[9px] sm:text-[11px] pointer-events-none">
           <div className="flex items-center gap-2">
             <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: COLORS.historical }} />
             <span className="text-[#94a3b8]">Historical</span>
@@ -634,18 +634,18 @@ export default function SimChart({
 
       {/* Event Zone Indicators */}
       {eventZones.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-1.5 sm:gap-2">
           {eventZones.map((zone) => (
             <div
               key={zone.id}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] border"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] border"
               style={{
                 backgroundColor: zone.zoneColor.bg,
                 borderColor: zone.zoneColor.border,
               }}
             >
               <span>{zone.emoji}</span>
-              <span className="text-[#94a3b8] max-w-[120px] truncate">{zone.name}</span>
+              <span className="text-[#94a3b8] max-w-[80px] sm:max-w-[120px] truncate">{zone.name}</span>
               <span
                 className={`font-mono font-medium ${
                   zone.isBullish ? "text-[#00d4aa]" : "text-[#ff4757]"
