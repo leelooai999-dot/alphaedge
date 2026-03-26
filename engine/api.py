@@ -922,6 +922,54 @@ def get_engagement(scenario_id: str):
     return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
 
 
+# --- OG Image Endpoint ---
+
+@app.get("/api/og/{scenario_id}")
+def get_og_image(scenario_id: str):
+    """Generate Open Graph image for a scenario."""
+    from fastapi.responses import Response
+    import og_image
+    
+    scenario = scenarios.get_scenario(scenario_id)
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
+    
+    # Parse result summary for stats
+    median_target = 0
+    prob_profit = 50
+    event_count = 0
+    try:
+        if scenario.get("result_summary"):
+            summary = json.loads(scenario["result_summary"]) if isinstance(scenario["result_summary"], str) else scenario["result_summary"]
+            median_target = summary.get("median_target") or summary.get("median30d") or 0
+            prob_profit = summary.get("probability_above_current") or summary.get("probProfit") or 50
+            if prob_profit < 1:
+                prob_profit *= 100
+        if scenario.get("events"):
+            events = json.loads(scenario["events"]) if isinstance(scenario["events"], str) else scenario["events"]
+            event_count = len(events) if isinstance(events, list) else 0
+    except Exception:
+        pass
+    
+    is_bullish = prob_profit >= 50
+    
+    svg = og_image.generate_og_svg(
+        ticker=scenario["ticker"],
+        title=scenario.get("title") or f"{scenario['ticker']} Scenario",
+        median_target=float(median_target),
+        prob_profit=float(prob_profit),
+        event_count=event_count,
+        author_name=scenario.get("author_name") or "Anonymous",
+        is_bullish=is_bullish,
+    )
+    
+    # Try PNG conversion, fall back to SVG
+    png = og_image.svg_to_png_bytes(svg)
+    if png:
+        return Response(content=png, media_type="image/png")
+    return Response(content=svg.encode("utf-8"), media_type="image/svg+xml")
+
+
 # --- Points Endpoints ---
 
 @app.get("/api/points/{user_id}")
