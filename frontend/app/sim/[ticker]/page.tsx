@@ -171,7 +171,7 @@ export default function SimulatorPage() {
         return backendEvent;
       });
 
-      const daysMap: Record<TimeRange, number> = { "7d": 7, "15d": 15, "30d": 30, "60d": 60, "90d": 90 };
+      const daysMap: Record<TimeRange, number> = { "7d": 7, "15d": 15, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "365d": 365 };
       const days = daysMap[timeRange] || 30;
       const dates: string[] = [];
       const now = new Date();
@@ -182,7 +182,7 @@ export default function SimulatorPage() {
       }
 
       try {
-        const res = await runSimulation(ticker, apiEvents, { fast });
+        const res = await runSimulation(ticker, apiEvents, { fast, horizonDays: days });
 
         // Check for stale response
         if (seq !== simSeqRef.current) {

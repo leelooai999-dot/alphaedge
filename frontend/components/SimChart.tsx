@@ -16,7 +16,7 @@ import {
 } from "lightweight-charts";
 import { SimulationResult, StockData, ActiveEvent } from "@/lib/events";
 
-export type TimeRange = "7d" | "15d" | "30d" | "60d" | "90d";
+export type TimeRange = "7d" | "15d" | "30d" | "60d" | "90d" | "180d" | "365d";
 type ChartMode = "single" | "bands";
 
 interface Props {
@@ -33,6 +33,8 @@ const TIME_RANGES: { label: string; value: TimeRange; days: number }[] = [
   { label: "1M", value: "30d", days: 30 },
   { label: "2M", value: "60d", days: 60 },
   { label: "3M", value: "90d", days: 90 },
+  { label: "6M", value: "180d", days: 180 },
+  { label: "1Y", value: "365d", days: 365 },
 ];
 
 const COLORS = {

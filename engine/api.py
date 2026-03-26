@@ -378,8 +378,13 @@ def run_simulation(req: SimulateRequest):
 
     event_impact_usd = round(result.median_target - baseline_target, 2) if baseline_target else None
 
-    # Limit paths for fast mode (reduce response size)
-    max_paths = 20 if req.fast else 50
+    # Limit paths for fast mode and long horizons (reduce response size)
+    if req.fast:
+        max_paths = 15
+    elif req.horizon_days > 180:
+        max_paths = 30
+    else:
+        max_paths = 50
 
     return SimulateResponse(
         ticker=result.ticker,

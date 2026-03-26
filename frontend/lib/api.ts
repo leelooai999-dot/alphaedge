@@ -33,16 +33,23 @@ export async function loadTickerPage(ticker: string) {
 export async function runSimulation(
   ticker: string,
   events: any[],
-  options?: { fast?: boolean }
+  options?: { fast?: boolean; horizonDays?: number }
 ): Promise<any> {
-  const nSim = options?.fast ? 1000 : 5000;
+  const days = options?.horizonDays || 30;
+  // Scale sim count by horizon: fewer paths for longer horizons to keep speed
+  let nSim: number;
+  if (options?.fast) {
+    nSim = days > 90 ? 300 : 500;
+  } else {
+    nSim = days > 180 ? 1000 : days > 90 ? 2000 : 5000;
+  }
   const res = await fetch(`${API_BASE}/api/simulate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       ticker,
       events,
-      horizon_days: 30,
+      horizon_days: days,
       n_simulations: nSim,
       fast: !!options?.fast,
     }),
