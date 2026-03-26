@@ -442,10 +442,13 @@ class ScenarioCreate(BaseModel):
 
 class ScenarioFork(BaseModel):
     author_name: str = "Anonymous"
+    commentary: str = ""  # User's explanation of what they changed
+    user_id: str = ""
 
 
 class ScenarioLike(BaseModel):
     session_id: str
+    user_id: str = ""  # For logged-in user dedup
 
 
 @app.post("/api/scenarios")
@@ -461,6 +464,23 @@ def create_scenario(req: ScenarioCreate):
         is_public=req.is_public,
         tags=req.tags,
     )
+    
+    # Record prediction for accuracy tracking
+    try:
+        import accuracy
+        if req.result_summary:
+            summary = json.loads(req.result_summary) if isinstance(req.result_summary, str) else req.result_summary
+            median = summary.get("median_target") or summary.get("median30d")
+            if median and result.get("id"):
+                accuracy.record_prediction(
+                    scenario_id=result["id"],
+                    ticker=req.ticker,
+                    predicted_median=float(median),
+                    horizon_days=30,
+                )
+    except Exception as e:
+        logger.warning(f"Accuracy tracking failed: {e}")
+    
     return result
 
 
@@ -496,8 +516,13 @@ def get_scenario(scenario_id: str):
 
 @app.post("/api/scenarios/{scenario_id}/fork")
 def fork_scenario(scenario_id: str, req: ScenarioFork):
-    """Fork a scenario."""
-    result = scenarios.fork_scenario(scenario_id, author_name=req.author_name)
+    """Fork a scenario with optional commentary."""
+    result = scenarios.fork_scenario(
+        scenario_id, 
+        author_name=req.author_name,
+        commentary=req.commentary,
+        user_id=req.user_id or None,
+    )
     if not result:
         raise HTTPException(404, "Scenario not found")
     return result
@@ -505,8 +530,9 @@ def fork_scenario(scenario_id: str, req: ScenarioFork):
 
 @app.post("/api/scenarios/{scenario_id}/like")
 def like_scenario(scenario_id: str, req: ScenarioLike):
-    """Like a scenario."""
-    newly_liked = scenarios.like_scenario(scenario_id, req.session_id)
+    """Like a scenario. Deduplicates by session_id OR user_id."""
+    dedup_key = req.user_id or req.session_id
+    newly_liked = scenarios.like_scenario(scenario_id, dedup_key)
     return {"liked": newly_liked}
 
 
@@ -852,15 +878,18 @@ def get_leaderboard(
 
 
 @app.get("/api/notifications")
-def get_notifications(unread_only: bool = False, authorization: Optional[str] = None):
-    """Get user notifications."""
-    if not authorization:
-        raise HTTPException(401, "Auth required")
-    import auth, social
-    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
-    if not user:
-        raise HTTPException(401, "Invalid token")
-    return social.get_notifications(user["user_id"], unread_only)
+def get_notifications(user_id: Optional[str] = None, unread_only: bool = False, limit: int = 20, authorization: Optional[str] = None):
+    """Get user notifications. Accepts user_id query param or Bearer token."""
+    import social
+    effective_user_id = user_id
+    if not effective_user_id and authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            effective_user_id = user["user_id"]
+    if not effective_user_id:
+        raise HTTPException(401, "Auth required (user_id param or Bearer token)")
+    return social.get_notifications(effective_user_id, unread_only, limit)
 
 
 @app.post("/api/notifications/read")
@@ -876,6 +905,14 @@ def mark_read(authorization: Optional[str] = None):
     return {"status": "ok"}
 
 
+@app.post("/api/notifications/{notif_id}/read")
+def mark_single_read(notif_id: int):
+    """Mark a single notification as read."""
+    import social
+    social.mark_single_notification_read(notif_id)
+    return {"status": "ok"}
+
+
 @app.get("/api/scenarios/{scenario_id}/engagement")
 def get_engagement(scenario_id: str):
     """Get engagement score for a scenario."""
@@ -883,6 +920,111 @@ def get_engagement(scenario_id: str):
     score = social.calculate_engagement_score(scenario_id)
     comment_count = social.get_comment_count(scenario_id)
     return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
+
+
+# --- Accuracy Tracking Endpoints ---
+
+@app.get("/api/accuracy/{scenario_id}")
+def get_accuracy(scenario_id: str):
+    """Get accuracy tracking for a scenario."""
+    import accuracy
+    result = accuracy.get_scenario_accuracy(scenario_id)
+    if not result:
+        return {"status": "not_tracked"}
+    return result
+
+
+@app.get("/api/accuracy/user/{user_id}")
+def get_user_accuracy(user_id: str):
+    """Get accuracy stats for a user."""
+    import accuracy
+    return accuracy.get_user_accuracy(user_id)
+
+
+@app.post("/api/accuracy/score")
+def trigger_accuracy_scoring():
+    """Manually trigger accuracy scoring (also runs in nightly build)."""
+    import accuracy
+    scored = accuracy.score_pending_predictions()
+    return {"scored_count": len(scored), "results": scored}
+
+
+# --- User Profile Endpoints ---
+
+@app.get("/api/users/{user_id}/profile")
+def get_user_profile(user_id: str):
+    """Get a user's public profile."""
+    import social
+    conn = get_db()
+    try:
+        # Try users table first
+        user = conn.execute(
+            "SELECT id, display_name, points, streak_days, tier, created_at FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        
+        # Get scenario stats
+        stats = conn.execute("""
+            SELECT 
+                COUNT(*) as scenario_count,
+                COALESCE(SUM(views), 0) as total_views,
+                COALESCE(SUM(likes), 0) as total_likes,
+                COALESCE(SUM(forks), 0) as total_forks
+            FROM scenarios WHERE author_id = ?
+        """, (user_id,)).fetchone()
+        
+        # Get follower/following counts
+        followers = conn.execute(
+            "SELECT COUNT(*) FROM follows WHERE following_id = ?", (user_id,)
+        ).fetchone()[0]
+        following = conn.execute(
+            "SELECT COUNT(*) FROM follows WHERE follower_id = ?", (user_id,)
+        ).fetchone()[0]
+        
+        engagement = social.calculate_user_engagement(user_id) if hasattr(social, 'calculate_user_engagement') else 0
+        
+        return {
+            "id": user_id,
+            "display_name": user["display_name"] if user else user_id,
+            "points": user["points"] if user else 0,
+            "streak_days": user["streak_days"] if user else 0,
+            "tier": user["tier"] if user else "free",
+            "joined_at": user["created_at"] if user else None,
+            "scenario_count": stats["scenario_count"] if stats else 0,
+            "total_views": stats["total_views"] if stats else 0,
+            "total_likes": stats["total_likes"] if stats else 0,
+            "total_forks": stats["total_forks"] if stats else 0,
+            "engagement_score": engagement,
+            "followers": followers,
+            "following": following,
+        }
+    except Exception as e:
+        logger.warning(f"Profile fetch error: {e}")
+        return {"id": user_id, "display_name": user_id, "points": 0, "streak_days": 0,
+                "tier": "free", "scenario_count": 0, "total_views": 0, "total_likes": 0,
+                "total_forks": 0, "engagement_score": 0, "followers": 0, "following": 0}
+    finally:
+        conn.close()
+
+
+@app.get("/api/users/{user_id}/scenarios")
+def get_user_scenarios(user_id: str, limit: int = 50):
+    """Get scenarios by a specific user."""
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT id, ticker, title, views, forks, likes, created_at
+            FROM scenarios 
+            WHERE author_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (user_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.warning(f"User scenarios fetch error: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 @app.get("/health")

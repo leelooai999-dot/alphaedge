@@ -480,6 +480,19 @@ def mark_notifications_read(user_id: str) -> bool:
         conn.close()
 
 
+def mark_single_notification_read(notif_id: int) -> bool:
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE notifications SET is_read = 1 WHERE id = ?",
+            (notif_id,)
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Leaderboard
 # ---------------------------------------------------------------------------

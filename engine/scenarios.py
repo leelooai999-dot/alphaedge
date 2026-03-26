@@ -137,20 +137,28 @@ def list_scenarios(
         conn.close()
 
 
-def fork_scenario(scenario_id: str, author_name: str = "Anonymous", author_id: Optional[str] = None) -> Optional[Dict]:
-    """Fork (copy) a scenario."""
+def fork_scenario(scenario_id: str, author_name: str = "Anonymous", author_id: Optional[str] = None, commentary: str = "", user_id: Optional[str] = None) -> Optional[Dict]:
+    """Fork (copy) a scenario with optional commentary."""
     original = get_scenario(scenario_id)
     if not original:
         return None
+
+    # Use user_id if provided, otherwise author_id
+    effective_author_id = user_id or author_id
+
+    # Build description: original description + fork commentary
+    desc = original.get("description") or ""
+    if commentary:
+        desc = f"🔄 Forked from {original.get('author_name', 'Anonymous')}: {commentary}"
 
     return create_scenario(
         ticker=original["ticker"],
         events=original["events"],
         result_summary=original["result_summary"],
         title=f"{original['title']} (fork)",
-        description=original.get("description"),
+        description=desc,
         author_name=author_name,
-        author_id=author_id,
+        author_id=effective_author_id,
         is_public=True,
         tags=original.get("tags"),
         forked_from=scenario_id,

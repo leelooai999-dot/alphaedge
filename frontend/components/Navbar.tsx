@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import AuthModal, { AuthUser } from "./AuthModal";
+import NotificationBell from "./NotificationBell";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -73,6 +74,7 @@ export default function Navbar() {
             >
               Explore
             </Link>
+            <NotificationBell userId={user?.id || null} />
             {user ? (
               <div className="relative">
                 <button
