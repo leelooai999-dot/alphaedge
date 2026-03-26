@@ -6,7 +6,7 @@ import Navbar from "@/components/Navbar";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-type FeedType = "trending" | "new" | "following";
+type FeedType = "trending" | "new" | "following" | "for_you";
 
 interface FeedScenario {
   id: string;
@@ -176,6 +176,7 @@ export default function FeedPage() {
   }, [feedType, tickerFilter]);
 
   const tabs: { label: string; value: FeedType; icon: string }[] = [
+    { label: "For You", value: "for_you", icon: "🎯" },
     { label: "Trending", value: "trending", icon: "🔥" },
     { label: "New", value: "new", icon: "🆕" },
     { label: "Following", value: "following", icon: "👥" },

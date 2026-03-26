@@ -57,6 +57,10 @@ price_cache = TTLCache(default_ttl=300)
 vol_cache = TTLCache(default_ttl=1800)
 # History cache: 5 min TTL (replaces unbounded dict)
 history_cache = TTLCache(default_ttl=300)
+# Social caches
+feed_cache = TTLCache(default_ttl=60)  # Feed: 1 min
+leaderboard_cache = TTLCache(default_ttl=120)  # Leaderboard: 2 min
+og_cache = TTLCache(default_ttl=600)  # OG images: 10 min
 
 
 # --- Request/Response Models ---
@@ -868,7 +872,18 @@ def get_feed(
         user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
         if user:
             user_id = user["user_id"]
-    return social.get_feed(type, user_id, ticker, limit, offset)
+    
+    # Cache non-personalized feeds
+    cache_key = f"feed:{type}:{ticker}:{limit}:{offset}" if type != "following" else None
+    if cache_key:
+        cached = feed_cache.get(cache_key)
+        if cached:
+            return cached
+    
+    result = social.get_feed(type, user_id, ticker, limit, offset)
+    if cache_key:
+        feed_cache.set(cache_key, result)
+    return result
 
 
 @app.get("/api/leaderboard")
@@ -878,8 +893,15 @@ def get_leaderboard(
     limit: int = 50,
 ):
     """Get engagement-scored leaderboard."""
+    cache_key = f"lb:{period}:{ticker}:{limit}"
+    cached = leaderboard_cache.get(cache_key)
+    if cached:
+        return cached
+    
     import social
-    return social.get_leaderboard(period, ticker, limit)
+    result = social.get_leaderboard(period, ticker, limit)
+    leaderboard_cache.set(cache_key, result)
+    return result
 
 
 @app.get("/api/notifications")

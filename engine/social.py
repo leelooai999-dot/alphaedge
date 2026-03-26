@@ -684,6 +684,66 @@ def get_feed(
                 ORDER BY s.created_at DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset)).fetchall()
+        elif feed_type == "for_you" and user_id:
+            # Personalized: boost tickers/events the user has interacted with
+            # 1. Find user's ticker interests (from their scenarios + likes)
+            user_tickers = conn.execute("""
+                SELECT ticker, COUNT(*) as cnt FROM (
+                    SELECT ticker FROM scenarios WHERE author_id = ?
+                    UNION ALL
+                    SELECT s.ticker FROM scenario_likes sl 
+                    JOIN scenarios s ON sl.scenario_id = s.id 
+                    WHERE sl.session_id = ?
+                ) GROUP BY ticker ORDER BY cnt DESC LIMIT 10
+            """, (user_id, user_id)).fetchall()
+            
+            ticker_boost = {r["ticker"]: min(r["cnt"] * 0.3, 2.0) for r in user_tickers}
+            
+            # 2. Get candidates (recent + engaging)
+            rows = conn.execute("""
+                SELECT s.*,
+                    (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) as comment_count,
+                    (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) as share_count,
+                    (
+                        (SELECT COUNT(*) FROM comments c WHERE c.scenario_id = s.id) * 3.0
+                        + s.forks * 2.5
+                        + (SELECT COUNT(*) FROM shares sh WHERE sh.scenario_id = s.id) * 2.0
+                        + s.likes * 1.0
+                        + s.views * 0.01
+                    ) as base_score,
+                    CASE WHEN s.author_id IN (
+                        SELECT following_id FROM follows WHERE follower_id = ?
+                    ) THEN 1.3 ELSE 1.0 END as follow_boost
+                FROM scenarios s
+                WHERE 1=1
+                ORDER BY base_score DESC
+                LIMIT 100
+            """, (user_id,)).fetchall()
+            
+            # 3. Re-rank with personalization
+            scored = []
+            seen_tickers: Dict[str, int] = {}
+            for r in rows:
+                d = dict(r)
+                score = d.get("base_score", 0) * d.get("follow_boost", 1.0)
+                # Ticker affinity
+                score *= (1 + ticker_boost.get(d["ticker"], 0))
+                # Diversity penalty (don't show 5 of same ticker)
+                seen_tickers[d["ticker"]] = seen_tickers.get(d["ticker"], 0) + 1
+                if seen_tickers[d["ticker"]] > 2:
+                    score *= 0.5
+                d["_score"] = score
+                scored.append(d)
+            
+            scored.sort(key=lambda x: x.get("_score", 0), reverse=True)
+            rows = scored[offset:offset + limit]
+            # Clean up internal fields
+            for r in rows:
+                r.pop("_score", None)
+                r.pop("base_score", None)
+                r.pop("follow_boost", None)
+            return rows
+        
         else:
             # Default: all, sorted by engagement
             rows = conn.execute("""
