@@ -416,7 +416,7 @@ export default function SimChart({
       for (const plotLine of pineOverlay.plots) {
         const pineSeries = chart.addSeries(LineSeries, {
           color: plotLine.color,
-          lineWidth: plotLine.lineWidth,
+          lineWidth: (plotLine.lineWidth || 1) as 1 | 2 | 3 | 4,
           priceLineVisible: false,
           lastValueVisible: false,
           title: plotLine.title,

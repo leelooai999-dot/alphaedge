@@ -21,7 +21,7 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-5">
             <Link
               href="/sim/AAPL"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
@@ -29,16 +29,22 @@ export default function Navbar() {
               Simulator
             </Link>
             <Link
+              href="/feed"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              Feed
+            </Link>
+            <Link
+              href="/leaderboard"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              🏆 Leaderboard
+            </Link>
+            <Link
               href="/explore"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
               Explore
-            </Link>
-            <Link
-              href="/methodology"
-              className="text-sm text-muted hover:text-white transition-colors no-underline"
-            >
-              Methodology
             </Link>
             <Link
               href="/sim/AAPL"
@@ -76,18 +82,25 @@ export default function Navbar() {
               Simulator
             </Link>
             <Link
+              href="/feed"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              Feed
+            </Link>
+            <Link
+              href="/leaderboard"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              🏆 Leaderboard
+            </Link>
+            <Link
               href="/explore"
               className="block py-2 text-sm text-muted hover:text-white no-underline"
               onClick={() => setOpen(false)}
             >
               Explore
-            </Link>
-            <Link
-              href="/methodology"
-              className="block py-2 text-sm text-muted hover:text-white no-underline"
-              onClick={() => setOpen(false)}
-            >
-              Methodology
             </Link>
             <Link
               href="/sim/AAPL"

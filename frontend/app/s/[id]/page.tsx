@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import CommentThread from "@/components/CommentThread";
 import { EVENT_TEMPLATES } from "@/lib/events";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -214,6 +215,11 @@ export default function ScenarioPage() {
           <span>{scenario.forks} forks</span>
           <span>❤️ {scenario.likes} likes</span>
           <span className="text-xs">Published {new Date(scenario.created_at).toLocaleDateString()}</span>
+        </div>
+
+        {/* Comments */}
+        <div className="mt-6">
+          <CommentThread scenarioId={id} />
         </div>
       </div>
     </main>
