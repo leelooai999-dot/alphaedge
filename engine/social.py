@@ -17,6 +17,52 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Anti-gaming / Rate Limiting
+# ---------------------------------------------------------------------------
+
+# In-memory rate limit cache (resets on server restart — fine for MVP)
+_rate_cache: Dict[str, List[float]] = {}
+
+def _check_rate_limit(key: str, max_per_minute: int = 5, max_per_hour: int = 30) -> bool:
+    """Returns True if action is allowed, False if rate-limited."""
+    now = datetime.utcnow().timestamp()
+    if key not in _rate_cache:
+        _rate_cache[key] = []
+    
+    # Clean old entries (older than 1 hour)
+    _rate_cache[key] = [t for t in _rate_cache[key] if now - t < 3600]
+    
+    # Check per-minute
+    recent_minute = sum(1 for t in _rate_cache[key] if now - t < 60)
+    if recent_minute >= max_per_minute:
+        logger.warning(f"Rate limited (per-min): {key}")
+        return False
+    
+    # Check per-hour
+    if len(_rate_cache[key]) >= max_per_hour:
+        logger.warning(f"Rate limited (per-hour): {key}")
+        return False
+    
+    _rate_cache[key].append(now)
+    return True
+
+
+def _is_spam_content(content: str) -> bool:
+    """Basic spam detection for comments."""
+    if len(content) < 2:
+        return True
+    if len(content) > 5000:
+        return True
+    # Repetitive characters
+    if len(set(content.lower())) < 3:
+        return True
+    # All caps over 50 chars
+    if len(content) > 50 and content == content.upper():
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Database schema for social features
 # ---------------------------------------------------------------------------
 
@@ -106,6 +152,13 @@ def add_comment(
     parent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Add a comment to a scenario. Returns the new comment."""
+    # Anti-gaming checks
+    rate_key = f"comment:{user_id or author_name}"
+    if not _check_rate_limit(rate_key, max_per_minute=5, max_per_hour=50):
+        raise ValueError("Too many comments — please slow down")
+    if _is_spam_content(content):
+        raise ValueError("Comment flagged as spam")
+    
     conn = get_db()
     try:
         comment_id = secrets.token_urlsafe(12)
@@ -116,9 +169,15 @@ def add_comment(
 
         # Award points to scenario author (if not self-comment)
         scenario = conn.execute(
-            "SELECT author_id FROM scenarios WHERE id = ?", (scenario_id,)
+            "SELECT author_id, author_name FROM scenarios WHERE id = ?", (scenario_id,)
         ).fetchone()
-        if scenario and scenario["author_id"] and scenario["author_id"] != user_id:
+        is_self_comment = (
+            scenario and scenario["author_id"] and scenario["author_id"] == user_id
+        ) or (
+            scenario and scenario["author_name"] == author_name and not user_id
+        )
+        
+        if scenario and scenario["author_id"] and not is_self_comment:
             award_points(scenario["author_id"], "received_comment", 3, comment_id, conn)
             # Notify scenario author
             add_notification(
@@ -129,9 +188,10 @@ def add_comment(
                 conn,
             )
 
-        # Award points to commenter
+        # Award points to commenter (reduced for self-comments)
         if user_id:
-            award_points(user_id, "posted_comment", 2, comment_id, conn)
+            pts = 1 if is_self_comment else 2  # Self-comments earn less
+            award_points(user_id, "posted_comment", pts, comment_id, conn)
 
         conn.commit()
         return {

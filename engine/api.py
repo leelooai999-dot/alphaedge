@@ -791,13 +791,16 @@ def create_comment(req: CommentCreate, authorization: Optional[str] = None):
         if user:
             user_id = user["user_id"]
             author = user["display_name"]
-    return social.add_comment(
-        scenario_id=req.scenario_id,
-        content=req.content,
-        user_id=user_id,
-        author_name=author,
-        parent_id=req.parent_id,
-    )
+    try:
+        return social.add_comment(
+            scenario_id=req.scenario_id,
+            content=req.content,
+            user_id=user_id,
+            author_name=author,
+            parent_id=req.parent_id,
+        )
+    except ValueError as e:
+        raise HTTPException(429, str(e))
 
 
 @app.get("/api/comments/{scenario_id}")
