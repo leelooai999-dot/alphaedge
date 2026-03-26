@@ -63,7 +63,87 @@ function parseResult(resultJson: string): { median: number; probProfit: number }
   }
 }
 
-function ScenarioCard({ scenario }: { scenario: FeedScenario }) {
+function EngagementBar({ scenario, currentUserId }: { scenario: FeedScenario; currentUserId: string | null }) {
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(scenario.likes);
+  
+  const handleLike = async () => {
+    if (liked) return;
+    try {
+      const sessionId = typeof window !== "undefined" 
+        ? (localStorage.getItem("alphaedge_session") || Math.random().toString(36).slice(2))
+        : "";
+      if (typeof window !== "undefined" && !localStorage.getItem("alphaedge_session")) {
+        localStorage.setItem("alphaedge_session", sessionId);
+      }
+      const res = await fetch(`${API_BASE}/api/scenarios/${scenario.id}/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: currentUserId, session_id: sessionId }),
+      });
+      if (res.ok) {
+        setLiked(true);
+        setLikeCount(prev => prev + 1);
+      }
+    } catch {}
+  };
+  
+  return (
+    <div className="flex items-center gap-4 pt-2 border-t border-border">
+      <Link href={`/s/${scenario.id}#comments`} className="text-xs text-muted flex items-center gap-1 hover:text-white no-underline">
+        💬 {scenario.comment_count || 0}
+      </Link>
+      <Link href={`/sim/${scenario.ticker}?fork=${scenario.id}`} className="text-xs text-muted flex items-center gap-1 hover:text-white no-underline">
+        🔄 {scenario.forks}
+      </Link>
+      <button onClick={handleLike} className={`text-xs flex items-center gap-1 bg-transparent border-0 cursor-pointer ${liked ? "text-red-400" : "text-muted hover:text-white"}`}>
+        {liked ? "❤️" : "🤍"} {likeCount}
+      </button>
+      <span className="text-xs text-muted flex items-center gap-1 ml-auto">
+        👁 {scenario.views.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+function FollowButton({ authorId, currentUserId }: { authorId: string; currentUserId: string | null }) {
+  const [following, setFollowing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  if (!currentUserId || !authorId || currentUserId === authorId) return null;
+  
+  const toggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      const endpoint = following ? "unfollow" : "follow";
+      await fetch(`${API_BASE}/api/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ follower_id: currentUserId, following_id: authorId }),
+      });
+      setFollowing(!following);
+    } catch {}
+    setLoading(false);
+  };
+  
+  return (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+        following
+          ? "border-accent/30 text-accent bg-accent/10"
+          : "border-border text-muted hover:text-white hover:border-accent/30"
+      }`}
+    >
+      {following ? "Following" : "Follow"}
+    </button>
+  );
+}
+
+function ScenarioCard({ scenario, currentUserId }: { scenario: FeedScenario; currentUserId: string | null }) {
   const events = parseEvents(scenario.events);
   const result = parseResult(scenario.result_summary || "{}");
   const engagement = (scenario.comment_count || 0) * 3 + scenario.forks * 2.5 + (scenario.share_count || 0) * 2 + scenario.likes + scenario.views * 0.01;
@@ -79,9 +159,12 @@ function ScenarioCard({ scenario }: { scenario: FeedScenario }) {
           <span className="text-sm text-white font-medium hover:text-accent transition-colors">{scenario.author_name || "Anonymous"}</span>
           <span className="text-xs text-muted">· {timeAgo(scenario.created_at)}</span>
         </Link>
-        <span className="text-xs text-muted flex items-center gap-1">
-          🔥 {Math.round(engagement)}
-        </span>
+        <div className="flex items-center gap-2">
+          <FollowButton authorId={scenario.author_id} currentUserId={currentUserId} />
+          <span className="text-xs text-muted flex items-center gap-1">
+            🔥 {Math.round(engagement)}
+          </span>
+        </div>
       </div>
 
       {/* Title + Ticker */}
@@ -132,20 +215,7 @@ function ScenarioCard({ scenario }: { scenario: FeedScenario }) {
       )}
 
       {/* Engagement bar */}
-      <div className="flex items-center gap-4 pt-2 border-t border-border">
-        <span className="text-xs text-muted flex items-center gap-1 hover:text-white cursor-pointer">
-          💬 {scenario.comment_count || 0}
-        </span>
-        <span className="text-xs text-muted flex items-center gap-1 hover:text-white cursor-pointer">
-          🔄 {scenario.forks}
-        </span>
-        <span className="text-xs text-muted flex items-center gap-1 hover:text-white cursor-pointer">
-          ❤️ {scenario.likes}
-        </span>
-        <span className="text-xs text-muted flex items-center gap-1 ml-auto">
-          👁 {scenario.views.toLocaleString()}
-        </span>
-      </div>
+      <EngagementBar scenario={scenario} currentUserId={currentUserId} />
     </div>
   );
 }
@@ -155,6 +225,18 @@ export default function FeedPage() {
   const [scenarios, setScenarios] = useState<FeedScenario[]>([]);
   const [loading, setLoading] = useState(true);
   const [tickerFilter, setTickerFilter] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Load current user
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("alphaedge_token") : null;
+    if (token) {
+      fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(u => { if (u?.user_id) setCurrentUserId(u.user_id); })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -236,7 +318,7 @@ export default function FeedPage() {
         ) : (
           <div className="space-y-3">
             {scenarios.map((s) => (
-              <ScenarioCard key={s.id} scenario={s} />
+              <ScenarioCard key={s.id} scenario={s} currentUserId={currentUserId} />
             ))}
           </div>
         )}
