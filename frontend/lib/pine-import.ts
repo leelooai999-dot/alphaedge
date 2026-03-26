@@ -86,7 +86,6 @@ interface ParsedPine {
 }
 
 function parsePineScript(code: string): ParsedPine {
-  const lines = code.split("\n");
   const errors: string[] = [];
 
   // Defaults
@@ -100,81 +99,251 @@ function parsePineScript(code: string): ParsedPine {
   const hlineCalls: PineHLine[] = [];
   const assignments: ParsedPine["assignments"] = [];
 
-  for (const rawLine of lines) {
+  // Step 1: Normalize — join continuation lines and strip inline comments
+  const rawLines = code.split("\n");
+  const normalizedLines: string[] = [];
+  let buffer = "";
+  for (const rawLine of rawLines) {
+    // Strip inline comments but preserve strings
+    let stripped = rawLine;
+    let inStr = false;
+    let strChar = "";
+    let commentPos = -1;
+    for (let i = 0; i < stripped.length; i++) {
+      if (inStr) {
+        if (stripped[i] === strChar && stripped[i - 1] !== "\\") inStr = false;
+      } else {
+        if (stripped[i] === '"' || stripped[i] === "'") {
+          inStr = true;
+          strChar = stripped[i];
+        } else if (stripped[i] === "/" && stripped[i + 1] === "/") {
+          commentPos = i;
+          break;
+        }
+      }
+    }
+    if (commentPos >= 0) stripped = stripped.substring(0, commentPos);
+
+    const trimmed = stripped.trimEnd();
+
+    // Join lines that are clearly continuations (open paren, comma at end, etc.)
+    if (buffer) {
+      buffer += " " + trimmed.trimStart();
+      // Check if parens are balanced
+      const opens = (buffer.match(/\(/g) || []).length;
+      const closes = (buffer.match(/\)/g) || []).length;
+      if (opens <= closes) {
+        normalizedLines.push(buffer);
+        buffer = "";
+      }
+    } else if (trimmed && !trimmed.startsWith("//")) {
+      const opens = (trimmed.match(/\(/g) || []).length;
+      const closes = (trimmed.match(/\)/g) || []).length;
+      if (opens > closes) {
+        buffer = trimmed;
+      } else {
+        normalizedLines.push(trimmed);
+      }
+    }
+  }
+  if (buffer) normalizedLines.push(buffer);
+
+  for (const rawLine of normalizedLines) {
     const line = rawLine.trim();
     if (!line || line.startsWith("//") || line.startsWith("//@")) continue;
 
     // indicator() or study()
-    const indicatorMatch = line.match(/(?:indicator|study)\s*\(\s*["'](.+?)["']/);
+    const indicatorMatch = line.match(/(?:indicator|study)\s*\(/);
     if (indicatorMatch) {
-      meta.name = indicatorMatch[1];
-      meta.shortName = indicatorMatch[1].substring(0, 20);
+      const nameMatch = line.match(/["'](.+?)["']/);
+      if (nameMatch) {
+        meta.name = nameMatch[1];
+        meta.shortName = nameMatch[1].substring(0, 20);
+      }
       meta.overlay = /overlay\s*=\s*true/.test(line);
       continue;
     }
 
-    // input.int / input.float / input.bool / input.string or input()
+    // Skip strategy declarations
+    if (/^strategy\s*\(/.test(line)) continue;
+    // Skip pure version annotations
+    if (/^\/\/@version/.test(line)) continue;
+
+    // input.int / input.float / input.bool / input.string / input() / input.source()
     const inputMatch = line.match(
-      /(\w+)\s*=\s*input(?:\.(int|float|bool|string))?\s*\(\s*(?:defval\s*=\s*)?([^,)]+)(?:,\s*(?:title\s*=\s*)?["'](.+?)["'])?/
+      /(\w+)\s*=\s*input(?:\.(int|float|bool|string|source))?\s*\(/
     );
     if (inputMatch) {
-      const [, varName, typeStr, defValRaw, titleRaw] = inputMatch;
-      const type = (typeStr || "float") as PineInput["type"];
-      let defaultValue: number | boolean | string;
-      const dvTrimmed = defValRaw.trim();
-      if (type === "bool") {
-        defaultValue = dvTrimmed === "true";
-      } else if (type === "string") {
-        defaultValue = dvTrimmed.replace(/['"]/g, "");
-      } else {
-        defaultValue = parseFloat(dvTrimmed) || 0;
+      const [, varName, typeStr] = inputMatch;
+      // Extract everything inside parens
+      const parenContent = extractParens(line, line.indexOf("input"));
+      const type = (typeStr === "source" ? "string" : typeStr || "float") as PineInput["type"];
+
+      // Find defval — first positional arg or defval= named arg
+      let defaultValue: number | boolean | string = type === "bool" ? false : type === "string" ? "close" : 14;
+      const defvalMatch = parenContent.match(/defval\s*=\s*([^,)]+)/);
+      const firstArg = parenContent.match(/^\s*([^,)]+)/);
+      const dvRaw = defvalMatch ? defvalMatch[1].trim() : firstArg ? firstArg[1].trim() : "";
+      if (dvRaw) {
+        if (type === "bool") defaultValue = dvRaw === "true";
+        else if (type === "string" || typeStr === "source") defaultValue = dvRaw.replace(/['"]/g, "");
+        else { const n = parseFloat(dvRaw); if (!isNaN(n)) defaultValue = n; }
       }
+
+      const titleMatch = parenContent.match(/title\s*=\s*["'](.+?)["']/);
       inputs.push({
         name: varName,
         type,
         defaultValue,
-        title: titleRaw || varName,
+        title: titleMatch ? titleMatch[1] : varName,
       });
       continue;
     }
 
-    // plot()
-    const plotMatch = line.match(
-      /plot\s*\(\s*(\w+)(?:,\s*(?:title\s*=\s*)?["'](.+?)["'])?(?:,\s*color\s*=\s*(.+?))?(?:,\s*linewidth\s*=\s*(\d+))?\s*\)/
-    );
-    if (plotMatch) {
-      plotCalls.push({
-        varName: plotMatch[1],
-        title: plotMatch[2] || plotMatch[1],
-        color: parsePineColor(plotMatch[3] || "color.blue"),
-        lineWidth: parseInt(plotMatch[4] || "1"),
-        style: "line",
-      });
+    // plot() — flexible matching
+    const plotIdx = findTopLevelCall(line, "plot");
+    if (plotIdx >= 0) {
+      const parenContent = extractParens(line, plotIdx);
+      if (parenContent) {
+        // First arg is the variable/expression to plot
+        const args = splitPineArgs(parenContent);
+        const firstArg = args[0]?.trim();
+        if (firstArg) {
+          const namedArgs = parseNamedArgs(args.slice(1));
+          plotCalls.push({
+            varName: firstArg,
+            title: namedArgs["title"]?.replace(/['"]/g, "") || firstArg,
+            color: parsePineColor(namedArgs["color"] || "color.blue"),
+            lineWidth: parseInt(namedArgs["linewidth"] || "1"),
+            style: namedArgs["style"]?.includes("histogram") ? "histogram" : "line",
+          });
+        }
+      }
       continue;
     }
 
     // hline()
-    const hlineMatch = line.match(
-      /hline\s*\(\s*([\d.]+)(?:,\s*(?:title\s*=\s*)?["'](.+?)["'])?(?:,\s*color\s*=\s*(.+?))?/
-    );
-    if (hlineMatch) {
-      hlineCalls.push({
-        price: parseFloat(hlineMatch[1]),
-        title: hlineMatch[2] || "",
-        color: parsePineColor(hlineMatch[3] || "color.gray"),
-        lineStyle: "dashed",
-      });
+    const hlineIdx = findTopLevelCall(line, "hline");
+    if (hlineIdx >= 0) {
+      const parenContent = extractParens(line, hlineIdx);
+      if (parenContent) {
+        const args = splitPineArgs(parenContent);
+        const price = parseFloat(args[0]?.trim() || "0");
+        if (!isNaN(price)) {
+          const namedArgs = parseNamedArgs(args.slice(1));
+          hlineCalls.push({
+            price,
+            title: namedArgs["title"]?.replace(/['"]/g, "") || "",
+            color: parsePineColor(namedArgs["color"] || "color.gray"),
+            lineStyle: "dashed",
+          });
+        }
+      }
       continue;
     }
 
-    // Variable assignment: name = expression
-    const assignMatch = line.match(/^(\w+)\s*=\s*(.+)$/);
-    if (assignMatch && !line.includes("input") && !line.includes("plot") && !line.includes("hline")) {
-      assignments.push({ name: assignMatch[1], expr: assignMatch[2].trim() });
+    // Tuple destructuring: [a, b, c] = ta.macd(...)
+    const tupleMatch = line.match(/^\[(.+?)\]\s*=\s*(.+)$/);
+    if (tupleMatch) {
+      const names = tupleMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
+      const expr = tupleMatch[2].trim();
+      // Handle ta.macd specially — it returns [macdLine, signalLine, histogram]
+      if (expr.includes("ta.macd")) {
+        assignments.push({ name: names[0] || "_macd", expr: expr + ".__macd" });
+        if (names[1]) assignments.push({ name: names[1], expr: expr + ".__signal" });
+        if (names[2]) assignments.push({ name: names[2], expr: expr + ".__hist" });
+      } else if (expr.includes("ta.bb")) {
+        assignments.push({ name: names[0] || "_middle", expr: expr + ".__middle" });
+        if (names[1]) assignments.push({ name: names[1], expr: expr + ".__upper" });
+        if (names[2]) assignments.push({ name: names[2], expr: expr + ".__lower" });
+      } else if (expr.includes("ta.stoch")) {
+        assignments.push({ name: names[0] || "_k", expr: expr + ".__k" });
+        if (names[1]) assignments.push({ name: names[1], expr: expr + ".__d" });
+      } else {
+        // Generic: assign first name only
+        assignments.push({ name: names[0], expr });
+      }
+      continue;
+    }
+
+    // Variable assignment: [var] name = expression
+    const assignMatch = line.match(/^(?:var\s+)?(\w+)\s*(?::=|=)\s*(.+)$/);
+    if (assignMatch && !line.includes("input(") && !line.includes("input.") 
+        && plotIdx < 0 && hlineIdx < 0) {
+      const varName = assignMatch[1];
+      const expr = assignMatch[2].trim();
+      // Skip if/else/for/while/switch keywords
+      if (["if", "else", "for", "while", "switch", "import", "export", "type", "method"].includes(varName)) continue;
+      assignments.push({ name: varName, expr });
     }
   }
 
   return { meta, inputs, plotCalls, hlineCalls, assignments, errors };
+}
+
+/** Extract content inside matching parentheses starting from a function call position */
+function extractParens(line: string, startIdx: number): string {
+  const openIdx = line.indexOf("(", startIdx);
+  if (openIdx < 0) return "";
+  let depth = 0;
+  let i = openIdx;
+  for (; i < line.length; i++) {
+    if (line[i] === "(") depth++;
+    else if (line[i] === ")") { depth--; if (depth === 0) break; }
+  }
+  return line.substring(openIdx + 1, i);
+}
+
+/** Find a top-level function call (not inside a string or nested call) */
+function findTopLevelCall(line: string, fnName: string): number {
+  // Match `plot(` or `plotshape(` etc. but NOT `plotCalls` or `hline_plot`
+  const regex = new RegExp(`(?:^|[^\\w.])${fnName}\\s*\\(`);
+  const m = line.match(regex);
+  if (!m) return -1;
+  return m.index! + m[0].indexOf(fnName);
+}
+
+/** Split Pine arguments respecting parentheses and strings */
+function splitPineArgs(content: string): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let current = "";
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (inStr) {
+      current += ch;
+      if (ch === strChar && content[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'") {
+      inStr = true;
+      strChar = ch;
+      current += ch;
+    } else if (ch === "(") {
+      depth++;
+      current += ch;
+    } else if (ch === ")") {
+      depth--;
+      current += ch;
+    } else if (ch === "," && depth === 0) {
+      args.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) args.push(current);
+  return args;
+}
+
+/** Parse named arguments like title="X", color=color.red */
+function parseNamedArgs(args: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const arg of args) {
+    const m = arg.match(/^\s*(\w+)\s*=\s*(.+)$/);
+    if (m) result[m[1]] = m[2].trim();
+  }
+  return result;
 }
 
 function parsePineColor(raw: string): string {
@@ -269,9 +438,14 @@ function computeTaFunction(
   inputValues: Record<string, number | boolean | string>
 ): number[] | null {
   const len = data.close.length;
-
+  
+  // Strip tuple suffix for matching, keep it for extraction  
+  const tupleSuffix = fnCall.match(/\.__(\w+)$/)?.[0] || "";
+  const baseFnCall = tupleSuffix ? fnCall.replace(tupleSuffix, "") : fnCall;
+  // For tuple-aware functions, we pass the full fnCall so they can check suffix
+  
   // ta.sma(source, length)
-  const smaMatch = fnCall.match(/ta\.sma\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const smaMatch = baseFnCall.match(/ta\.sma\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (smaMatch) {
     const src = getSeriesOrVar(smaMatch[1], data, vars);
     const period = resolveNumber(smaMatch[2], inputValues);
@@ -281,7 +455,7 @@ function computeTaFunction(
   }
 
   // ta.ema(source, length)
-  const emaMatch = fnCall.match(/ta\.ema\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const emaMatch = baseFnCall.match(/ta\.ema\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (emaMatch) {
     const src = getSeriesOrVar(emaMatch[1], data, vars);
     const period = resolveNumber(emaMatch[2], inputValues);
@@ -291,7 +465,7 @@ function computeTaFunction(
   }
 
   // ta.rsi(source, length)
-  const rsiMatch = fnCall.match(/ta\.rsi\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const rsiMatch = baseFnCall.match(/ta\.rsi\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (rsiMatch) {
     const src = getSeriesOrVar(rsiMatch[1], data, vars);
     const period = resolveNumber(rsiMatch[2], inputValues);
@@ -300,8 +474,8 @@ function computeTaFunction(
     return padFront(result, len);
   }
 
-  // ta.macd(source, fast, slow, signal)
-  const macdMatch = fnCall.match(/ta\.macd\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  // ta.macd(source, fast, slow, signal) — with tuple support
+  const macdMatch = baseFnCall.match(/ta\.macd\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (macdMatch) {
     const src = getSeriesOrVar(macdMatch[1], data, vars);
     const fast = resolveNumber(macdMatch[2], inputValues);
@@ -316,23 +490,30 @@ function computeTaFunction(
       SimpleMAOscillator: false,
       SimpleMASignal: false,
     });
-    // Return MACD line (histogram = MACD - signal)
+    // Check if this is a tuple extraction (__macd, __signal, __hist)
+    if (fnCall.endsWith(".__macd")) return padFront(result.map((r) => r.MACD ?? 0), len);
+    if (fnCall.endsWith(".__signal")) return padFront(result.map((r) => r.signal ?? 0), len);
+    if (fnCall.endsWith(".__hist")) return padFront(result.map((r) => (r.MACD ?? 0) - (r.signal ?? 0)), len);
+    // Default: return MACD line
     return padFront(result.map((r) => r.MACD ?? 0), len);
   }
 
-  // ta.bb(source, length, mult) — returns middle band
-  const bbMatch = fnCall.match(/ta\.bb\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  // ta.bb(source, length, mult) — with tuple support
+  const bbMatch = baseFnCall.match(/ta\.bb\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (bbMatch) {
     const src = getSeriesOrVar(bbMatch[1], data, vars);
     const period = resolveNumber(bbMatch[2], inputValues);
     const stdDev = resolveNumber(bbMatch[3], inputValues);
     if (!src || !period || !stdDev) return null;
     const result = BollingerBands.calculate({ period, values: src, stdDev });
+    if (fnCall.endsWith(".__middle")) return padFront(result.map((r) => r.middle), len);
+    if (fnCall.endsWith(".__upper")) return padFront(result.map((r) => r.upper), len);
+    if (fnCall.endsWith(".__lower")) return padFront(result.map((r) => r.lower), len);
     return padFront(result.map((r) => r.middle), len);
   }
 
   // ta.atr(length)
-  const atrMatch = fnCall.match(/ta\.atr\s*\(\s*(\w+)\s*\)/);
+  const atrMatch = baseFnCall.match(/ta\.atr\s*\(\s*(\w+)\s*\)/);
   if (atrMatch) {
     const period = resolveNumber(atrMatch[1], inputValues);
     if (!period) return null;
@@ -345,8 +526,8 @@ function computeTaFunction(
     return padFront(result, len);
   }
 
-  // ta.stoch(close, high, low, length)
-  const stochMatch = fnCall.match(/ta\.stoch\s*\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*,\s*(\w+)\s*\)/);
+  // ta.stoch(close, high, low, length) — with tuple support
+  const stochMatch = baseFnCall.match(/ta\.stoch\s*\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*,\s*(\w+)\s*\)/);
   if (stochMatch) {
     const period = resolveNumber(stochMatch[1], inputValues);
     if (!period) return null;
@@ -357,11 +538,13 @@ function computeTaFunction(
       period,
       signalPeriod: 3,
     });
+    if (fnCall.endsWith(".__k")) return padFront(result.map((r) => r.k), len);
+    if (fnCall.endsWith(".__d")) return padFront(result.map((r) => r.d), len);
     return padFront(result.map((r) => r.k), len);
   }
 
   // ta.crossover(a, b) — returns 1 or 0
-  const crossMatch = fnCall.match(/ta\.(crossover|crossunder)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const crossMatch = baseFnCall.match(/ta\.(crossover|crossunder)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (crossMatch) {
     const isOver = crossMatch[1] === "crossover";
     const a = getSeriesOrVar(crossMatch[2], data, vars);
@@ -379,7 +562,7 @@ function computeTaFunction(
   }
 
   // ta.highest(source, length) / ta.lowest(source, length)
-  const hlMatch = fnCall.match(/ta\.(highest|lowest)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const hlMatch = baseFnCall.match(/ta\.(highest|lowest)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (hlMatch) {
     const isHighest = hlMatch[1] === "highest";
     const src = getSeriesOrVar(hlMatch[2], data, vars);
@@ -474,6 +657,7 @@ export function executePineScript(
 
   // Generate plot outputs
   const plots: PinePlotLine[] = [];
+  const plottedVars = new Set<string>();
   for (const pc of parsed.plotCalls) {
     const values = vars[pc.varName];
     if (values) {
@@ -484,8 +668,32 @@ export function executePineScript(
         values,
         style: pc.style as PinePlotLine["style"],
       });
+      plottedVars.add(pc.varName);
     } else {
-      errors.push(`plot(): variable "${pc.varName}" not found`);
+      errors.push(`plot(): variable "${pc.varName}" not found — it may use unsupported Pine syntax`);
+    }
+  }
+
+  // Auto-plot ta.* computed variables that weren't explicitly plotted
+  if (plots.length === 0) {
+    const autoColors = ["#3b82f6", "#ef4444", "#22c55e", "#f97316", "#a855f7", "#eab308", "#14b8a6", "#d946ef"];
+    let colorIdx = 0;
+    for (const { name } of parsed.assignments) {
+      if (plottedVars.has(name)) continue;
+      const values = vars[name];
+      if (values && values.some(v => !isNaN(v) && v !== 0)) {
+        plots.push({
+          title: name,
+          color: autoColors[colorIdx % autoColors.length],
+          lineWidth: 1,
+          values,
+          style: "line",
+        });
+        colorIdx++;
+        plottedVars.add(name);
+        // Limit auto-plots to 8 to avoid chart clutter
+        if (colorIdx >= 8) break;
+      }
     }
   }
 
@@ -507,13 +715,17 @@ export function validatePineScript(code: string): { valid: boolean; errors: stri
   const errors = [...parsed.errors];
 
   if (!code.includes("indicator") && !code.includes("study")) {
-    errors.push("Missing indicator() or study() declaration");
+    // Not a hard error — many Pine scripts from TradingView work without
+    // We just note it as a warning, not a blocker
   }
-  if (code.includes("strategy")) {
-    errors.push("Strategy scripts are not supported — only indicators");
+  if (/^strategy\s*\(/m.test(code)) {
+    errors.push("Strategy scripts are not supported — only indicators. Remove strategy() and replace with indicator().");
   }
-  if (parsed.plotCalls.length === 0) {
-    errors.push("No plot() calls found — nothing to display");
+  
+  // Count plottable items: explicit plot() calls OR ta.* assignments we can auto-plot
+  const hasTaAssignments = parsed.assignments.some(a => a.expr.includes("ta."));
+  if (parsed.plotCalls.length === 0 && !hasTaAssignments) {
+    errors.push("No plot() calls or ta.* functions found — nothing to display. Make sure your script uses plot() to render output.");
   }
 
   return {

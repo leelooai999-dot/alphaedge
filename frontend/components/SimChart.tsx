@@ -211,6 +211,8 @@ export default function SimChart({
   const seriesRef = useRef<ISeriesApi<any, Time>[]>([]);
   const [chartMode, setChartMode] = useState<ChartMode>("single");
   const [showPineScript, setShowPineScript] = useState(false);
+  const lastSetRangeRef = useRef<string>("");  // tracks which timeRange was last auto-fitted
+  const userScrolledRef = useRef(false);  // tracks if user manually scrolled
 
   // Determine if projection is bullish or bearish
   const isBullish = result ? result.median30d >= stock.currentPrice : true;
@@ -460,33 +462,40 @@ export default function SimChart({
       });
     }
 
-    // Fit and set visible range
-    chart.timeScale().fitContent();
+    // Only auto-fit visible range when timeRange changes (not on every re-render)
+    // This prevents the chart from snapping back when the user manually scrolls
+    const rangeKey = `${stock.ticker}_${timeRange}`;
+    if (lastSetRangeRef.current !== rangeKey) {
+      lastSetRangeRef.current = rangeKey;
+      userScrolledRef.current = false;
 
-    const activeRange = TIME_RANGES.find((r) => r.value === timeRange) || TIME_RANGES[2];
-    const allDates: string[] = [];
-    if (stock.historicalPrices.length > 0) {
-      allDates.push(...stock.historicalPrices.map((p) => p.date));
-    }
-    if (result) {
-      allDates.push(...result.paths.dates);
-    }
-    if (allDates.length > 0) {
-      const histLen = stock.historicalPrices.length;
-      const visibleDays = activeRange.days;
-      const fromIndex = Math.max(0, histLen - Math.floor(visibleDays * 0.4));
-      const toIndex = Math.min(allDates.length - 1, histLen + Math.floor(visibleDays * 0.6));
-      const fromDate = allDates[fromIndex];
-      const toDate = allDates[toIndex];
+      chart.timeScale().fitContent();
 
-      if (fromDate && toDate && fromDate !== toDate) {
-        try {
-          chart.timeScale().setVisibleRange({
-            from: fromDate as Time,
-            to: toDate as Time,
-          });
-        } catch {
-          chart.timeScale().fitContent();
+      const activeRange = TIME_RANGES.find((r) => r.value === timeRange) || TIME_RANGES[2];
+      const allDates: string[] = [];
+      if (stock.historicalPrices.length > 0) {
+        allDates.push(...stock.historicalPrices.map((p) => p.date));
+      }
+      if (result) {
+        allDates.push(...result.paths.dates);
+      }
+      if (allDates.length > 0) {
+        const histLen = stock.historicalPrices.length;
+        const visibleDays = activeRange.days;
+        const fromIndex = Math.max(0, histLen - Math.floor(visibleDays * 0.4));
+        const toIndex = Math.min(allDates.length - 1, histLen + Math.floor(visibleDays * 0.6));
+        const fromDate = allDates[fromIndex];
+        const toDate = allDates[toIndex];
+
+        if (fromDate && toDate && fromDate !== toDate) {
+          try {
+            chart.timeScale().setVisibleRange({
+              from: fromDate as Time,
+              to: toDate as Time,
+            });
+          } catch {
+            chart.timeScale().fitContent();
+          }
         }
       }
     }

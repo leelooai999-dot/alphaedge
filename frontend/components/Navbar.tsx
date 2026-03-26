@@ -1,10 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import AuthModal, { AuthUser } from "./AuthModal";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  useEffect(() => {
+    // Restore auth state from localStorage
+    try {
+      const stored = localStorage.getItem("alphaedge_user");
+      if (stored) setUser(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleLogout = () => {
+    const token = localStorage.getItem("alphaedge_token");
+    if (token) {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+      fetch(`${API_BASE}/api/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+    localStorage.removeItem("alphaedge_token");
+    localStorage.removeItem("alphaedge_user");
+    setUser(null);
+    setShowUserMenu(false);
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-bg/80 backdrop-blur-md border-b border-border">
@@ -46,12 +73,48 @@ export default function Navbar() {
             >
               Explore
             </Link>
-            <Link
-              href="/sim/AAPL"
-              className="px-4 py-1.5 bg-accent/10 text-accent text-sm font-medium rounded-lg hover:bg-accent/20 transition-colors no-underline"
-            >
-              Try Free →
-            </Link>
+            {user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent text-sm font-medium rounded-lg hover:bg-accent/20 transition-colors"
+                >
+                  <span className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold">
+                    {user.display_name[0].toUpperCase()}
+                  </span>
+                  {user.display_name}
+                  <span className="text-xs text-muted">{user.points} pts</span>
+                </button>
+                {showUserMenu && (
+                  <div className="absolute right-0 top-10 w-48 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50">
+                    <div className="px-3 py-2 border-b border-border">
+                      <p className="text-xs text-white font-medium">{user.display_name}</p>
+                      <p className="text-[10px] text-muted">{user.email}</p>
+                    </div>
+                    <Link
+                      href="/leaderboard"
+                      className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      🏆 {user.points} points · #{user.tier}
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-400/10"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAuth(true)}
+                className="px-4 py-1.5 bg-accent/10 text-accent text-sm font-medium rounded-lg hover:bg-accent/20 transition-colors"
+              >
+                Sign In
+              </button>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -102,15 +165,31 @@ export default function Navbar() {
             >
               Explore
             </Link>
-            <Link
-              href="/sim/AAPL"
-              className="block py-2 text-sm text-accent font-medium no-underline"
-              onClick={() => setOpen(false)}
-            >
-              Try Free →
-            </Link>
+            {user ? (
+              <button
+                onClick={() => { handleLogout(); setOpen(false); }}
+                className="block py-2 text-sm text-red-400 font-medium"
+              >
+                Sign Out ({user.display_name})
+              </button>
+            ) : (
+              <button
+                onClick={() => { setShowAuth(true); setOpen(false); }}
+                className="block py-2 text-sm text-accent font-medium"
+              >
+                Sign In / Register
+              </button>
+            )}
           </div>
         </div>
+      )}
+
+      {/* Auth modal */}
+      {showAuth && (
+        <AuthModal
+          onClose={() => setShowAuth(false)}
+          onAuth={(u) => { setUser(u); setShowAuth(false); }}
+        />
       )}
     </nav>
   );
