@@ -11,7 +11,10 @@ import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
 import SaveScenarioModal from "@/components/SaveScenarioModal";
+import PineImport from "@/components/PineImport";
 import type { TimeRange } from "@/components/SimChart";
+import type { PineResult, OHLCVData } from "@/lib/pine-import";
+import { getStockOHLCV } from "@/lib/api";
 
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
 
@@ -28,26 +31,44 @@ export default function SimulatorPage() {
   const [loading, setLoading] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(!!API_BASE);
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
+  const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
+  const [pineResult, setPineResult] = useState<PineResult | null>(null);
 
   // Track last simulation request to prevent stale responses
   const simSeqRef = useRef(0);
+
+  // Map time range to history days needed (show at least as much history as forecast)
+  const historyDaysForRange = (range: TimeRange): number => {
+    const map: Record<TimeRange, number> = { "7d": 90, "15d": 90, "30d": 90, "60d": 120, "90d": 180, "180d": 365, "365d": 365 };
+    return map[range] || 90;
+  };
 
   // Load stock data and historical prices
   useEffect(() => {
     let cancelled = false;
 
     const loadStock = async () => {
-      setStock(null);
-      setResult(null);
-      setEvents([]);
+      // Only reset everything on ticker change, not on timeRange change
+      if (!stock || stock.ticker !== ticker) {
+        setStock(null);
+        setResult(null);
+        setEvents([]);
+      } else {
+        setResult(null); // Just re-run sim for new range
+      }
 
       if (apiAvailable) {
         try {
-          const [data, history, polyOdds] = await Promise.all([
+          const histDays = historyDaysForRange(timeRange);
+          const [data, history, polyOdds, ohlcv] = await Promise.all([
             getStock(ticker),
-            getStockHistory(ticker, 90),
+            getStockHistory(ticker, histDays),
             getPolymarketLiveOdds(),
+            getStockOHLCV(ticker, histDays),
           ]);
+
+          // Store OHLCV for Pine Script import
+          if (ohlcv) setOhlcvData(ohlcv as OHLCVData);
 
           if (cancelled) return;
 
@@ -134,7 +155,7 @@ export default function SimulatorPage() {
 
     loadStock();
     return () => { cancelled = true; };
-  }, [ticker, apiAvailable]);
+  }, [ticker, apiAvailable, timeRange]);
 
   // Map frontend impact (-30 to +30) to backend severity (1-10)
   function impactToSeverity(impact: number): number {
@@ -390,6 +411,9 @@ export default function SimulatorPage() {
                 )}
                 {loading ? "Simulating" : "Run Full Sim"}
               </button>
+              <div className="hidden sm:block">
+                <PineImport ohlcvData={ohlcvData} onIndicatorResult={setPineResult} />
+              </div>
               <button
                 onClick={handleSave}
                 className="px-3 py-1.5 bg-accent/10 text-accent text-xs font-medium rounded-lg hover:bg-accent/20 transition-colors whitespace-nowrap hidden sm:block"
@@ -435,7 +459,7 @@ export default function SimulatorPage() {
           {/* Chart + stats — shows FIRST on mobile */}
           <div className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4">
             <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
-              <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
+              <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} pineOverlay={pineResult} />
             </div>
             {result && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">

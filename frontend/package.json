@@ -14,7 +14,8 @@
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "swr": "^2.3.3"
+    "swr": "^2.3.3",
+    "technicalindicators": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

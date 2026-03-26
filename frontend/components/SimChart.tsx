@@ -19,12 +19,19 @@ import { SimulationResult, StockData, ActiveEvent } from "@/lib/events";
 export type TimeRange = "7d" | "15d" | "30d" | "60d" | "90d" | "180d" | "365d";
 type ChartMode = "single" | "bands";
 
+interface PineOverlay {
+  plots: { title: string; color: string; lineWidth: number; values: number[]; style: string }[];
+  hlines: { price: number; title: string; color: string; lineStyle: string }[];
+  meta: { name: string; overlay: boolean };
+}
+
 interface Props {
   stock: StockData;
   result: SimulationResult | null;
   events?: ActiveEvent[];
   timeRange?: TimeRange;
   onTimeRangeChange?: (range: TimeRange) => void;
+  pineOverlay?: PineOverlay | null;
 }
 
 const TIME_RANGES: { label: string; value: TimeRange; days: number }[] = [
@@ -68,9 +75,10 @@ const EVENT_ZONE_COLORS: Record<string, { bg: string; border: string }> = {
 };
 
 /** Generate Pine Script for the current simulation.
- * Uses line.new() drawing approach instead of plot() since projection
- * needs to draw FORWARD from the last bar, which plot() can't do.
- * This approach draws the projection as line segments on the last bar.
+ * Uses timestamp-based line.new() coordinates so projections scale
+ * correctly when the TradingView time range is changed.
+ * Each data point has a real calendar date (YYYY-MM-DD) mapped to
+ * a Pine timestamp() call, ensuring the lines stay anchored in time.
  */
 function generatePineScript(
   stock: StockData,
@@ -78,7 +86,7 @@ function generatePineScript(
   events: ActiveEvent[],
   mode: ChartMode
 ): string {
-  const { median, p25, p75, p5, p95 } = result.paths;
+  const { dates, median, p25, p75, p5, p95 } = result.paths;
   const ticker = stock.ticker;
   const currentPrice = stock.currentPrice;
   const days = median.length - 1;
@@ -88,43 +96,52 @@ function generatePineScript(
     (e) => `// ${e.emoji} ${e.name}: ${e.probability}% probability, ${e.duration}d, ${e.impact > 0 ? "+" : ""}${e.impact}% impact`
   ).join("\n");
 
-  // Sample down to ~20 points for line segments
-  const sampleStep = Math.max(1, Math.floor(days / 20));
-  const sample = (arr: number[]) =>
-    arr.filter((_, i) => i % sampleStep === 0 || i === arr.length - 1)
-      .map((v) => v.toFixed(2));
+  // Sample down to ~25 points for line segments
+  const sampleStep = Math.max(1, Math.floor(days / 25));
+  const sampleIndices: number[] = [];
+  for (let i = 0; i < median.length; i += sampleStep) sampleIndices.push(i);
+  if (sampleIndices[sampleIndices.length - 1] !== median.length - 1) {
+    sampleIndices.push(median.length - 1);
+  }
 
-  const medianSampled = sample(median);
-  const p25Sampled = sample(p25);
-  const p75Sampled = sample(p75);
-  const p5Sampled = sample(p5);
-  const p95Sampled = sample(p95);
-  const numPoints = medianSampled.length;
-  const barsBetween = sampleStep;
+  // Generate timestamp and price arrays
+  const genTimestampArray = (name: string, arr: number[]) => {
+    const entries = sampleIndices.map((idx) => {
+      const d = dates[idx] || dates[dates.length - 1];
+      const [y, m, day] = d.split("-").map(Number);
+      return `    array.push(${name}_ts, timestamp(${y}, ${m}, ${day}, 9, 30))\n    array.push(${name}_px, ${arr[idx].toFixed(2)})`;
+    });
+    return `    var int[] ${name}_ts = array.new_int(0)\n    var float[] ${name}_px = array.new_float(0)\n${entries.join("\n")}`;
+  };
 
-  // Build the line drawing code for bands
-  let bandDrawing = "";
+  // Build line drawing code using timestamps
+  const drawLines = (tsName: string, pxName: string, color: string, width: number, style: string = "line.style_solid") => {
+    return `    for i = 0 to array.size(${tsName}) - 2
+        line.new(array.get(${tsName}, i), array.get(${pxName}, i), array.get(${tsName}, i + 1), array.get(${pxName}, i + 1), xloc=xloc.bar_time, color=${color}, width=${width}, style=${style})`;
+  };
+
+  let bandCode = "";
   if (mode === "bands") {
-    bandDrawing = `
+    bandCode = `
+${genTimestampArray("p25", p25)}
+${genTimestampArray("p75", p75)}
+${genTimestampArray("p5", p5)}
+${genTimestampArray("p95", p95)}
+    
     // Inner band (P25-P75)
-    float[] p25_vals = array.from(${p25Sampled.join(", ")})
-    float[] p75_vals = array.from(${p75Sampled.join(", ")})
-    for i = 0 to array.size(p25_vals) - 2
-        int x1 = bar_index + i * bars_per_step
-        int x2 = bar_index + (i + 1) * bars_per_step
-        line.new(x1, array.get(p25_vals, i), x2, array.get(p25_vals, i + 1), color=color.new(proj_color, 70), width=1)
-        line.new(x1, array.get(p75_vals, i), x2, array.get(p75_vals, i + 1), color=color.new(proj_color, 70), width=1)
-        // Fill between with linefill
+${drawLines("p25_ts", "p25_px", "color.new(proj_color, 70)", 1)}
+${drawLines("p75_ts", "p75_px", "color.new(proj_color, 70)", 1)}
     
     // Outer band (P5-P95)
-    float[] p5_vals = array.from(${p5Sampled.join(", ")})
-    float[] p95_vals = array.from(${p95Sampled.join(", ")})
-    for i = 0 to array.size(p5_vals) - 2
-        int x1 = bar_index + i * bars_per_step
-        int x2 = bar_index + (i + 1) * bars_per_step
-        line.new(x1, array.get(p5_vals, i), x2, array.get(p5_vals, i + 1), color=color.new(proj_color, 85), width=1, style=line.style_dotted)
-        line.new(x1, array.get(p95_vals, i), x2, array.get(p95_vals, i + 1), color=color.new(proj_color, 85), width=1, style=line.style_dotted)`;
+${drawLines("p5_ts", "p5_px", "color.new(proj_color, 85)", 1, "line.style_dotted")}
+${drawLines("p95_ts", "p95_px", "color.new(proj_color, 85)", 1, "line.style_dotted")}`;
   }
+
+  // Start and end timestamps for reference line
+  const startDate = dates[0] || new Date().toISOString().split("T")[0];
+  const endDate = dates[dates.length - 1] || startDate;
+  const [sY, sM, sD] = startDate.split("-").map(Number);
+  const [eY, eM, eD] = endDate.split("-").map(Number);
 
   return `//@version=5
 // ═══════════════════════════════════════════════════════════════
@@ -136,6 +153,7 @@ function generatePineScript(
 ${eventDescriptions}
 //
 // Median target: $${result.median30d.toFixed(2)} | Prob. profit: ${result.probProfit}%
+// Horizon: ${days} trading days
 // Generated: ${new Date().toISOString().split("T")[0]}
 //
 // 🔗 Create your own: https://alphaedge.io/sim/${ticker}
@@ -146,43 +164,37 @@ indicator("AlphaEdge: ${ticker} Event Simulation", overlay=true, max_bars_back=5
 show_bands  = input.bool(${mode === "bands"}, "Show Confidence Bands")
 proj_color  = input.color(${isBullish ? "color.teal" : "color.red"}, "Projection Color")
 
-// ── Projection data (absolute prices sampled from Monte Carlo) ──
-float[] median_vals = array.from(${medianSampled.join(", ")})
-
-int bars_per_step = ${barsBetween}
-
-// ── Draw projection on the LAST bar using line.new() ──
-// This draws forward from the current bar into the future
+// ── Draw projection using timestamp coordinates ──
+// Lines use xloc.bar_time so they stay anchored when chart time range changes
 if barstate.islast
-    // Draw median projection line segments
-    for i = 0 to array.size(median_vals) - 2
-        int x1 = bar_index + i * bars_per_step
-        int x2 = bar_index + (i + 1) * bars_per_step
-        float y1 = array.get(median_vals, i)
-        float y2 = array.get(median_vals, i + 1)
-        line.new(x1, y1, x2, y2, color=proj_color, width=2, extend=extend.none)
+    // Median projection (timestamp-anchored)
+${genTimestampArray("med", median)}
+    
+${drawLines("med_ts", "med_px", "proj_color", 2)}
     
     // Target price label at the end
-    float target = array.get(median_vals, array.size(median_vals) - 1)
-    int target_x = bar_index + (array.size(median_vals) - 1) * bars_per_step
-    label.new(target_x, target, "$" + str.tostring(target, "#.00"), color=color.new(proj_color, 80), textcolor=proj_color, style=label.style_label_left, size=size.small)
+    float target = array.get(med_px, array.size(med_px) - 1)
+    int target_t = array.get(med_ts, array.size(med_ts) - 1)
+    label.new(target_t, target, "$" + str.tostring(target, "#.00"), xloc=xloc.bar_time, color=color.new(proj_color, 80), textcolor=proj_color, style=label.style_label_left, size=size.small)
     
-    // Current price reference line
-    line.new(bar_index, close, bar_index + (array.size(median_vals) - 1) * bars_per_step, close, color=color.new(color.gray, 70), width=1, style=line.style_dashed)
-${bandDrawing}
+    // Current price reference line (dashed)
+    line.new(timestamp(${sY}, ${sM}, ${sD}, 9, 30), close, timestamp(${eY}, ${eM}, ${eD}, 16, 0), close, xloc=xloc.bar_time, color=color.new(color.gray, 70), width=1, style=line.style_dashed)
+${bandCode}
     
     // Info table
-    var table info = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80), border_width=1)
+    var table info = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80), border_width=1)
     table.cell(info, 0, 0, "AlphaEdge", text_color=proj_color, text_size=size.small)
     table.cell(info, 1, 0, "${ticker}", text_color=color.white, text_size=size.small)
     table.cell(info, 0, 1, "Target", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 1, "$${result.median30d.toFixed(0)}", text_color=proj_color, text_size=size.tiny)
     table.cell(info, 0, 2, "Prob Profit", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 2, "${result.probProfit}%", text_color=${result.probProfit >= 50 ? "color.teal" : "color.red"}, text_size=size.tiny)
-    table.cell(info, 0, 3, "Events", text_color=color.gray, text_size=size.tiny)
-    table.cell(info, 1, 3, "${events.length}", text_color=color.white, text_size=size.tiny)
-    table.cell(info, 0, 4, "", text_color=color.gray, text_size=size.tiny)
-    table.cell(info, 1, 4, "alphaedge.io", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 0, 3, "Horizon", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 3, "${days}d", text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 4, "Events", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 4, "${events.length}", text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 5, "", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 5, "alphaedge.io", text_color=color.gray, text_size=size.tiny)
 `;
 }
 
@@ -192,6 +204,7 @@ export default function SimChart({
   events = [],
   timeRange = "30d",
   onTimeRangeChange,
+  pineOverlay,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -397,6 +410,43 @@ export default function SimChart({
       );
     }
 
+    // Pine Script indicator overlay
+    if (pineOverlay && pineOverlay.plots.length > 0 && pineOverlay.meta.overlay) {
+      const histDates = stock.historicalPrices.map((p) => p.date);
+      for (const plotLine of pineOverlay.plots) {
+        const pineSeries = chart.addSeries(LineSeries, {
+          color: plotLine.color,
+          lineWidth: plotLine.lineWidth,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title: plotLine.title,
+        });
+        // Align Pine values with historical dates
+        const pineData = plotLine.values
+          .map((v, i) => ({
+            time: histDates[i] as Time,
+            value: v,
+          }))
+          .filter((d) => d.time && !isNaN(d.value) && isFinite(d.value));
+        if (pineData.length > 0) {
+          pineSeries.setData(pineData);
+        }
+      }
+      // Draw hlines
+      for (const hl of pineOverlay.hlines) {
+        if (historicalSeries) {
+          historicalSeries.createPriceLine({
+            price: hl.price,
+            color: hl.color + "80",
+            lineWidth: 1,
+            lineStyle: hl.lineStyle === "dotted" ? LineStyle.Dotted : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: hl.title,
+          });
+        }
+      }
+    }
+
     // "Today" marker
     if (stock.historicalPrices.length > 0) {
       const lastPrice = stock.historicalPrices[stock.historicalPrices.length - 1].price;
@@ -440,7 +490,7 @@ export default function SimChart({
         }
       }
     }
-  }, [stock, result, timeRange, chartMode]);
+  }, [stock, result, timeRange, chartMode, pineOverlay]);
 
   // Event zones
   const eventZones = useMemo(() => {

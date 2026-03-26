@@ -279,10 +279,11 @@ def get_stock_detail(ticker: str):
 
 
 @app.get("/api/stocks/{ticker}/history")
-def get_stock_history_endpoint(ticker: str, days: int = 90):
-    """Fetch historical daily prices for a ticker using yfinance, with TTL cache."""
+def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False):
+    """Fetch historical daily prices for a ticker using yfinance, with TTL cache.
+    Pass ?ohlcv=true to get full OHLCV data (needed for Pine Script indicators)."""
     ticker = ticker.upper()
-    cache_key = f"{ticker}_{days}"
+    cache_key = f"{ticker}_{days}_{'ohlcv' if ohlcv else 'close'}"
 
     cached = history_cache.get(cache_key)
     if cached is not None:
@@ -301,7 +302,20 @@ def get_stock_history_endpoint(ticker: str, days: int = 90):
         hist = hist.tail(days)
         dates = [d.strftime("%Y-%m-%d") for d in hist.index]
         prices = [round(p, 2) for p in hist["Close"].tolist()]
-        result = {"dates": dates, "prices": prices}
+
+        if ohlcv:
+            result = {
+                "dates": dates,
+                "prices": prices,
+                "open": [round(p, 2) for p in hist["Open"].tolist()],
+                "high": [round(p, 2) for p in hist["High"].tolist()],
+                "low": [round(p, 2) for p in hist["Low"].tolist()],
+                "close": prices,
+                "volume": [int(v) for v in hist["Volume"].tolist()],
+            }
+        else:
+            result = {"dates": dates, "prices": prices}
+
         history_cache.set(cache_key, result)
         return result
     except HTTPException:
@@ -715,6 +729,160 @@ def get_feedback_stats(days: int = 7):
     """Get feedback summary (admin endpoint)."""
     import feedback
     return feedback.get_feedback_stats(days=days)
+
+
+# --- Social Endpoints (v6) ---
+
+class CommentCreate(BaseModel):
+    scenario_id: str
+    content: str
+    author_name: str = "Anonymous"
+    parent_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ShareRecord(BaseModel):
+    scenario_id: str
+    platform: str  # twitter, reddit, linkedin, copy
+    session_id: Optional[str] = None
+
+
+class FollowAction(BaseModel):
+    following_id: str
+
+
+@app.post("/api/comments")
+def create_comment(req: CommentCreate, authorization: Optional[str] = None):
+    """Add a comment to a scenario."""
+    import social
+    user_id = None
+    author = req.author_name
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+            author = user["display_name"]
+    return social.add_comment(
+        scenario_id=req.scenario_id,
+        content=req.content,
+        user_id=user_id,
+        author_name=author,
+        parent_id=req.parent_id,
+    )
+
+
+@app.get("/api/comments/{scenario_id}")
+def list_comments(scenario_id: str, limit: int = 50, offset: int = 0):
+    """Get comments for a scenario."""
+    import social
+    comments = social.get_comments(scenario_id, limit, offset)
+    total = social.get_comment_count(scenario_id)
+    return {"comments": comments, "total": total}
+
+
+@app.post("/api/shares")
+def record_share(req: ShareRecord, authorization: Optional[str] = None):
+    """Record a share event for points + analytics."""
+    import social
+    user_id = None
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+    social.record_share(req.scenario_id, req.platform, user_id, req.session_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/follow")
+def follow(req: FollowAction, authorization: Optional[str] = None):
+    """Follow a user."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, social
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    social.follow_user(user["user_id"], req.following_id)
+    return {"status": "followed"}
+
+
+@app.delete("/api/follow/{following_id}")
+def unfollow(following_id: str, authorization: Optional[str] = None):
+    """Unfollow a user."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, social
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    social.unfollow_user(user["user_id"], following_id)
+    return {"status": "unfollowed"}
+
+
+@app.get("/api/feed")
+def get_feed(
+    type: str = "trending",
+    ticker: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+    authorization: Optional[str] = None,
+):
+    """Get scenario feed (trending, new, following)."""
+    import social
+    user_id = None
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+    return social.get_feed(type, user_id, ticker, limit, offset)
+
+
+@app.get("/api/leaderboard")
+def get_leaderboard(
+    period: str = "all_time",
+    ticker: Optional[str] = None,
+    limit: int = 50,
+):
+    """Get engagement-scored leaderboard."""
+    import social
+    return social.get_leaderboard(period, ticker, limit)
+
+
+@app.get("/api/notifications")
+def get_notifications(unread_only: bool = False, authorization: Optional[str] = None):
+    """Get user notifications."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, social
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    return social.get_notifications(user["user_id"], unread_only)
+
+
+@app.post("/api/notifications/read")
+def mark_read(authorization: Optional[str] = None):
+    """Mark all notifications as read."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, social
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    social.mark_notifications_read(user["user_id"])
+    return {"status": "ok"}
+
+
+@app.get("/api/scenarios/{scenario_id}/engagement")
+def get_engagement(scenario_id: str):
+    """Get engagement score for a scenario."""
+    import social
+    score = social.calculate_engagement_score(scenario_id)
+    comment_count = social.get_comment_count(scenario_id)
+    return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
 
 
 @app.get("/health")

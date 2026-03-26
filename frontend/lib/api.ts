@@ -21,6 +21,26 @@ export async function getStockHistory(
   }
 }
 
+export async function getStockOHLCV(
+  ticker: string,
+  days: number = 90
+): Promise<{
+  dates: string[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
+  volume: number[];
+} | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks/${ticker}/history?days=${days}&ohlcv=true`);
+    if (!res.ok) throw new Error("OHLCV not found");
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 /** Parallel fetch of stock info + history for initial page load */
 export async function loadTickerPage(ticker: string) {
   const [stockData, historyData] = await Promise.all([
