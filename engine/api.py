@@ -576,6 +576,7 @@ class RegisterRequest(BaseModel):
     password: str
     display_name: str
     session_id: Optional[str] = None  # migrate anonymous data
+    referral_code: Optional[str] = None  # referrer's code
 
 
 class LoginRequest(BaseModel):
@@ -599,6 +600,7 @@ def register(req: RegisterRequest):
             password=req.password,
             display_name=req.display_name,
             session_id=req.session_id,
+            referral_code=req.referral_code,
         )
         return result
     except ValueError as e:
@@ -920,6 +922,53 @@ def get_engagement(scenario_id: str):
     score = social.calculate_engagement_score(scenario_id)
     comment_count = social.get_comment_count(scenario_id)
     return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
+
+
+# --- Badge Endpoints ---
+
+@app.get("/api/badges/{user_id}")
+def get_badges(user_id: str):
+    """Get all badges for a user."""
+    import badges
+    return {"badges": badges.get_user_badges(user_id)}
+
+
+@app.post("/api/badges/{user_id}/check")
+def check_badges(user_id: str):
+    """Check and award any newly earned badges."""
+    import badges
+    newly_awarded = badges.check_and_award_badges(user_id)
+    return {"newly_awarded": newly_awarded, "all_badges": badges.get_user_badges(user_id)}
+
+
+# --- Referral Endpoints ---
+
+@app.get("/api/referral/{user_id}")
+def get_referral_info(user_id: str):
+    """Get a user's referral code and stats."""
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT referral_code FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not user:
+            raise HTTPException(404, "User not found")
+        
+        # Count referrals
+        referral_count = conn.execute(
+            "SELECT COUNT(*) FROM points_ledger WHERE user_id = ? AND action = 'referral'",
+            (user_id,)
+        ).fetchone()[0]
+        
+        referral_code = user["referral_code"] or ""
+        return {
+            "referral_code": referral_code,
+            "referral_link": f"https://alphaedge.vercel.app/?ref={referral_code}",
+            "referral_count": referral_count,
+            "points_earned": referral_count * 50,
+        }
+    finally:
+        conn.close()
 
 
 # --- OG Image Endpoint ---

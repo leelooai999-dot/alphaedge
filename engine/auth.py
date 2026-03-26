@@ -46,7 +46,9 @@ def init_auth_db():
                 points INTEGER DEFAULT 0,
                 streak_days INTEGER DEFAULT 0,
                 streak_last_date TEXT,
-                tier TEXT DEFAULT 'free'
+                tier TEXT DEFAULT 'free',
+                referral_code TEXT UNIQUE,
+                referred_by TEXT
             );
 
             CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -99,6 +101,7 @@ def create_user(
     password: str,
     display_name: str,
     session_id: Optional[str] = None,
+    referral_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Register a new user. Returns user dict + auth token.
@@ -112,14 +115,16 @@ def create_user(
             raise ValueError("Email already registered")
 
         user_id = secrets.token_urlsafe(16)
+        # Generate unique referral code for this user
+        user_referral_code = secrets.token_urlsafe(6)
         password_hash = _hash_password(password)
         token = secrets.token_urlsafe(32)
         expires = (datetime.utcnow() + timedelta(days=90)).isoformat()
 
         conn.execute("""
-            INSERT INTO users (id, email, display_name, password_hash, session_id)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, email.lower(), display_name, password_hash, session_id))
+            INSERT INTO users (id, email, display_name, password_hash, session_id, referral_code)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, email.lower(), display_name, password_hash, session_id, user_referral_code))
 
         conn.execute("""
             INSERT INTO auth_tokens (token, user_id, expires_at)
@@ -136,6 +141,22 @@ def create_user(
                 )
             """, (user_id, display_name, session_id))
 
+        # Handle referral — award points to referrer
+        if referral_code:
+            referrer = conn.execute(
+                "SELECT id FROM users WHERE referral_code = ?", (referral_code,)
+            ).fetchone()
+            if referrer:
+                conn.execute("""
+                    INSERT INTO points_ledger (user_id, action, points, reference_id)
+                    VALUES (?, 'referral', 50, ?)
+                """, (referrer["id"], user_id))
+                conn.execute("""
+                    INSERT INTO points_ledger (user_id, action, points, reference_id)
+                    VALUES (?, 'referred_bonus', 10, ?)
+                """, (user_id, referrer["id"]))
+                logger.info(f"Referral: {referrer['id']} referred {user_id}, +50pts to referrer")
+
         conn.commit()
 
         return {
@@ -144,7 +165,8 @@ def create_user(
             "display_name": display_name,
             "token": token,
             "tier": "free",
-            "points": 0,
+            "points": 10 if referral_code else 0,
+            "referral_code": user_referral_code,
         }
     finally:
         conn.close()
