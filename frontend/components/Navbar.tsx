@@ -94,11 +94,18 @@ export default function Navbar() {
                       <p className="text-[10px] text-muted">{user.email}</p>
                     </div>
                     <Link
+                      href="/points"
+                      className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      ⭐ {user.points} points · Redeem →
+                    </Link>
+                    <Link
                       href="/leaderboard"
                       className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
                       onClick={() => setShowUserMenu(false)}
                     >
-                      🏆 {user.points} points · #{user.tier}
+                      🏆 Leaderboard
                     </Link>
                     <button
                       onClick={handleLogout}

@@ -922,6 +922,38 @@ def get_engagement(scenario_id: str):
     return {"scenario_id": scenario_id, "engagement_score": score, "comment_count": comment_count}
 
 
+# --- Points Endpoints ---
+
+@app.get("/api/points/{user_id}")
+def get_user_points(user_id: str):
+    """Get a user's points balance and recent history."""
+    conn = get_db()
+    try:
+        # Total points
+        total_row = conn.execute(
+            "SELECT COALESCE(SUM(points), 0) FROM points_ledger WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        total = total_row[0] if total_row else 0
+        
+        # Recent history
+        rows = conn.execute("""
+            SELECT action, points, reference_id, created_at
+            FROM points_ledger WHERE user_id = ?
+            ORDER BY created_at DESC LIMIT 50
+        """, (user_id,)).fetchall()
+        
+        return {
+            "total": total,
+            "history": [dict(r) for r in rows],
+        }
+    except Exception as e:
+        logger.warning(f"Points fetch error: {e}")
+        return {"total": 0, "history": []}
+    finally:
+        conn.close()
+
+
 # --- Accuracy Tracking Endpoints ---
 
 @app.get("/api/accuracy/{scenario_id}")
