@@ -207,7 +207,7 @@ _extended_cache: Dict[str, Any] = {"data": [], "fetched_at": 0}
 _EXTENDED_TTL = 300  # 5 minutes
 
 
-def _fetch_extended_markets(pages: int = 3) -> List[Dict]:
+def _fetch_extended_markets(pages: int = 5) -> List[Dict]:
     """Fetch top 300+ active markets for search (paginated, cached)."""
     if _extended_cache["data"] and (time.time() - _extended_cache["fetched_at"]) < _EXTENDED_TTL:
         return _extended_cache["data"]
@@ -252,22 +252,28 @@ def search_polymarket(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     Search Polymarket for active markets matching a query string.
     Returns simplified market objects suitable for the frontend.
     Searches question text and slug. Ranks by volume.
+    Uses word-boundary matching to avoid false positives (e.g. "oil" matching "Boilermakers").
     """
+    import re
     markets = _fetch_extended_markets()
     query_lower = query.lower().strip()
     query_words = query_lower.split()
 
+    # Build regex patterns for word-boundary matching
+    word_patterns = []
+    for w in query_words:
+        # Escape special regex chars, then wrap in word boundaries
+        escaped = re.escape(w)
+        word_patterns.append(re.compile(r'\b' + escaped + r'\b', re.IGNORECASE))
+
     scored = []
     for m in markets:
-        question = m.get("question", "").lower()
-        slug = m.get("slug", "").lower()
+        question = m.get("question", "")
+        slug = m.get("slug", "").replace("-", " ").replace("_", " ")
         searchable = question + " " + slug
 
-        # Skip sports/entertainment noise for finance-focused queries
-        # (only if the query itself looks finance-related)
-        
-        # All query words must appear in question or slug
-        if not all(w in searchable for w in query_words):
+        # All query words must appear as whole words in question or slug
+        if not all(pat.search(searchable) for pat in word_patterns):
             continue
 
         odds = _parse_odds(m)
