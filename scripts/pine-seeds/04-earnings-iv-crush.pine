@@ -1,0 +1,74 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+// © AlphaEdge (alphaedge.io)
+//
+// Earnings IV Crush Predictor
+// Shows the expected pre-earnings IV ramp and post-earnings crush zone.
+// Historical earnings day moves averaged to project expected ranges.
+// Full temporal simulation with events: https://alphaedge.vercel.app/sim/
+
+//@version=5
+indicator("Earnings IV Crush [AlphaEdge]", overlay=true, max_lines_count=100)
+
+// Inputs
+daysToEarnings = input.int(14, "Days Until Earnings", minval=1, maxval=90)
+expectedMove   = input.float(5.0, "Expected Move % (from options chain)", minval=0.5, maxval=30, step=0.5)
+ivRampDays     = input.int(5, "IV Ramp Period (days before)", minval=1, maxval=20)
+
+// Calculate levels
+moveAmount = close * (expectedMove / 100)
+preRampStart = close
+postBullish = close + moveAmount
+postBearish = close - moveAmount
+
+// ATR for additional context
+atr14 = ta.atr(14)
+
+if barstate.islast
+    // Pre-earnings IV ramp zone
+    line.new(bar_index, close, bar_index + daysToEarnings - ivRampDays, close,
+         color=color.new(color.gray, 60), width=1, style=line.style_dotted)
+    
+    // IV ramp phase
+    line.new(bar_index + daysToEarnings - ivRampDays, close - atr14 * 0.5,
+             bar_index + daysToEarnings, close - moveAmount * 0.3,
+         color=color.new(color.purple, 50), width=1, style=line.style_dashed)
+    line.new(bar_index + daysToEarnings - ivRampDays, close + atr14 * 0.5,
+             bar_index + daysToEarnings, close + moveAmount * 0.3,
+         color=color.new(color.purple, 50), width=1, style=line.style_dashed)
+    
+    // Earnings day vertical
+    line.new(bar_index + daysToEarnings, close + moveAmount * 1.2,
+             bar_index + daysToEarnings, close - moveAmount * 1.2,
+         color=color.new(color.yellow, 40), width=2, style=line.style_solid)
+    
+    // Post-earnings expected range
+    label.new(bar_index + daysToEarnings, postBullish,
+         "Bull $" + str.tostring(postBullish, "#.##") + " (+" + str.tostring(expectedMove, "#.#") + "%)",
+         color=color.new(color.green, 80), textcolor=color.green,
+         style=label.style_label_left, size=size.tiny)
+    label.new(bar_index + daysToEarnings, postBearish,
+         "Bear $" + str.tostring(postBearish, "#.##") + " (-" + str.tostring(expectedMove, "#.#") + "%)",
+         color=color.new(color.red, 80), textcolor=color.red,
+         style=label.style_label_left, size=size.tiny)
+    
+    // Post-earnings crush zone (IV drops, narrower range)
+    line.new(bar_index + daysToEarnings, postBullish,
+             bar_index + daysToEarnings + 10, close + moveAmount * 0.4,
+         color=color.new(color.green, 70), width=1, style=line.style_dashed)
+    line.new(bar_index + daysToEarnings, postBearish,
+             bar_index + daysToEarnings + 10, close - moveAmount * 0.4,
+         color=color.new(color.red, 70), width=1, style=line.style_dashed)
+    
+    // Info table
+    var table info = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80))
+    table.cell(info, 0, 0, "Earnings IV", text_color=color.purple, text_size=size.small)
+    table.cell(info, 1, 0, "AlphaEdge", text_color=color.blue, text_size=size.small)
+    table.cell(info, 0, 1, "Days to Earnings", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 1, str.tostring(daysToEarnings), text_color=color.yellow, text_size=size.tiny)
+    table.cell(info, 0, 2, "Expected Move", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 2, "±" + str.tostring(expectedMove, "#.#") + "%", text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 3, "Bull / Bear", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 3, "$" + str.tostring(postBullish, "#.##") + " / $" + str.tostring(postBearish, "#.##"), text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 4, "Full Sim →", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 4, "alphaedge.io", text_color=color.blue, text_size=size.tiny)

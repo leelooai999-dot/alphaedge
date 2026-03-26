@@ -1,0 +1,72 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+// © AlphaEdge (alphaedge.io)
+//
+// Monte Carlo Confidence Bands
+// Approximates Monte Carlo simulation confidence intervals using
+// historical volatility + geometric Brownian motion.
+// For full Monte Carlo with event simulation: https://alphaedge.vercel.app/sim/
+
+//@version=5
+indicator("Monte Carlo Bands [AlphaEdge]", overlay=true, max_lines_count=500)
+
+// Inputs
+horizonDays  = input.int(30, "Forecast Horizon (days)", minval=5, maxval=365)
+confidence   = input.int(90, "Confidence Level %", minval=50, maxval=99)
+volLookback  = input.int(20, "Volatility Lookback", minval=5, maxval=252)
+driftBias    = input.float(0.0, "Drift Bias % (annualized)", minval=-50, maxval=50, step=1)
+showFill     = input.bool(true, "Fill Between Bands")
+
+// Historical volatility
+logReturns = math.log(close / close[1])
+dailyVol = ta.stdev(logReturns, volLookback)
+annualVol = dailyVol * math.sqrt(252)
+
+// Z-score for confidence level
+// Approximation for common levels
+zScore = confidence >= 99 ? 2.576 : 
+         confidence >= 95 ? 1.960 : 
+         confidence >= 90 ? 1.645 : 
+         confidence >= 80 ? 1.282 :
+         confidence >= 68 ? 1.000 : 0.675
+
+// GBM projection
+drift = driftBias / 100 / 252  // daily drift
+sqrtT = math.sqrt(horizonDays)
+
+medianPrice = close * math.exp((drift - 0.5 * dailyVol * dailyVol) * horizonDays)
+upperPrice  = close * math.exp((drift - 0.5 * dailyVol * dailyVol) * horizonDays + zScore * dailyVol * sqrtT)
+lowerPrice  = close * math.exp((drift - 0.5 * dailyVol * dailyVol) * horizonDays - zScore * dailyVol * sqrtT)
+
+// Draw on last bar
+if barstate.islast
+    // Lines
+    medLine = line.new(bar_index, close, bar_index + horizonDays, medianPrice,
+         color=color.white, width=2, style=line.style_solid)
+    upLine = line.new(bar_index, close, bar_index + horizonDays, upperPrice,
+         color=color.new(color.green, 30), width=1, style=line.style_dashed)
+    loLine = line.new(bar_index, close, bar_index + horizonDays, lowerPrice,
+         color=color.new(color.red, 30), width=1, style=line.style_dashed)
+    
+    // Labels
+    label.new(bar_index + horizonDays, medianPrice, "Median $" + str.tostring(medianPrice, "#.##"),
+         style=label.style_label_left, color=color.new(color.white, 80), textcolor=color.white, size=size.tiny)
+    label.new(bar_index + horizonDays, upperPrice, "P" + str.tostring(50 + confidence/2) + " $" + str.tostring(upperPrice, "#.##"),
+         style=label.style_label_left, color=color.new(color.green, 80), textcolor=color.green, size=size.tiny)
+    label.new(bar_index + horizonDays, lowerPrice, "P" + str.tostring(50 - confidence/2) + " $" + str.tostring(lowerPrice, "#.##"),
+         style=label.style_label_left, color=color.new(color.red, 80), textcolor=color.red, size=size.tiny)
+    
+    // Info table
+    var table info = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80))
+    table.cell(info, 0, 0, "MC Forecast", text_color=color.white, text_size=size.small)
+    table.cell(info, 1, 0, "AlphaEdge", text_color=color.blue, text_size=size.small)
+    table.cell(info, 0, 1, "Horizon", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 1, str.tostring(horizonDays) + " days", text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 2, "Confidence", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 2, str.tostring(confidence) + "%", text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 3, "Ann. Volatility", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 3, str.tostring(annualVol * 100, "#.#") + "%", text_color=color.yellow, text_size=size.tiny)
+    table.cell(info, 0, 4, "Median Target", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 4, "$" + str.tostring(medianPrice, "#.##"), text_color=color.white, text_size=size.tiny)
+    table.cell(info, 0, 5, "Full Sim →", text_color=color.gray, text_size=size.tiny)
+    table.cell(info, 1, 5, "alphaedge.io", text_color=color.blue, text_size=size.tiny)
