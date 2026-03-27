@@ -91,8 +91,10 @@ export default function MarketplacePage() {
 
   const filtered = listings
     .filter((l) => {
-      if (search && !l.title.toLowerCase().includes(search.toLowerCase()) &&
-          !l.description.toLowerCase().includes(search.toLowerCase())) return false;
+      const s = search.toLowerCase();
+      if (search && !l.title.toLowerCase().includes(s) &&
+          !l.description?.toLowerCase().includes(s) &&
+          !(l.tagline || "").toLowerCase().includes(s)) return false;
       if (selectedCategory && l.category !== selectedCategory) return false;
       if (selectedType && l.type !== selectedType) return false;
       return true;
@@ -221,7 +223,7 @@ export default function MarketplacePage() {
                     {listing.title}
                   </h3>
                   <p className="text-xs text-muted line-clamp-2 mb-3 flex-1">
-                    {listing.description}
+                    {listing.tagline || listing.subtitle || listing.description?.substring(0, 120)}
                   </p>
 
                   {/* Rating & stats */}
