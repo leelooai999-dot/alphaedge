@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   executePineScript,
   validatePineScript,
@@ -102,8 +103,8 @@ export default function PineImport({ ohlcvData, onIndicatorResult }: Props) {
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setIsOpen(false)}>
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setIsOpen(false)}>
       <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
@@ -190,6 +191,7 @@ plot(sma_val, "SMA", color=color.blue, linewidth=2)`}
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
