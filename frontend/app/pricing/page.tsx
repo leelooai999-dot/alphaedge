@@ -50,6 +50,7 @@ function PricingContent() {
   const [userTier, setUserTier] = useState<string>("free");
   const [loading, setLoading] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [pendingUpgrade, setPendingUpgrade] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("alphaedge_token");
@@ -63,11 +64,45 @@ function PricingContent() {
         .then((d) => setUserTier(d.tier || "free"))
         .catch(() => {});
     }
+
+    // Listen for auth completion to update token and auto-trigger pending upgrade
+    const onAuthComplete = () => {
+      const newToken = localStorage.getItem("alphaedge_token");
+      if (newToken) {
+        setAuthToken(newToken);
+        // Auto-trigger pending upgrade checkout
+        setPendingUpgrade((pending) => {
+          if (pending) {
+            // Small delay to let state settle
+            setTimeout(() => {
+              const btn = document.querySelector(`[data-upgrade-tier="${pending}"]`) as HTMLButtonElement;
+              if (btn) btn.click();
+            }, 500);
+          }
+          return null;
+        });
+      }
+    };
+    window.addEventListener("auth-complete", onAuthComplete);
+    // Also listen for storage changes (in case auth modal updates localStorage)
+    window.addEventListener("storage", onAuthComplete);
+    return () => {
+      window.removeEventListener("auth-complete", onAuthComplete);
+      window.removeEventListener("storage", onAuthComplete);
+    };
   }, []);
 
   const handleUpgrade = async (tier: string) => {
-    if (!authToken) {
-      // Trigger auth modal
+    // Re-check localStorage in case user just logged in
+    const freshToken = localStorage.getItem("alphaedge_token");
+    if (freshToken && !authToken) {
+      setAuthToken(freshToken);
+    }
+    
+    const tokenToUse = freshToken || authToken;
+    if (!tokenToUse) {
+      // Remember which tier user wanted, then show auth modal
+      setPendingUpgrade(tier);
       window.dispatchEvent(new CustomEvent("show-auth-modal"));
       return;
     }
@@ -78,7 +113,7 @@ function PricingContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
+          Authorization: `Bearer ${tokenToUse}`,
         },
         body: JSON.stringify({ tier }),
       });
@@ -209,6 +244,7 @@ function PricingContent() {
               <button
                 onClick={() => handleUpgrade("pro")}
                 disabled={loading === "pro"}
+                data-upgrade-tier="pro"
                 className="w-full py-2.5 px-4 bg-accent text-white rounded-xl font-bold hover:bg-accent/90 transition-colors disabled:opacity-50"
               >
                 {loading === "pro" ? (
@@ -250,6 +286,7 @@ function PricingContent() {
               <button
                 onClick={() => handleUpgrade("premium")}
                 disabled={loading === "premium"}
+                data-upgrade-tier="premium"
                 className="w-full py-2.5 px-4 bg-purple-500 text-white rounded-xl font-bold hover:bg-purple-500/90 transition-colors disabled:opacity-50"
               >
                 {loading === "premium" ? (

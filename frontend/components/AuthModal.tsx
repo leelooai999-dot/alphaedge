@@ -82,6 +82,7 @@ export default function AuthModal({ onClose, onAuth }: Props) {
           };
           localStorage.setItem("alphaedge_token", loginData.token);
           localStorage.setItem("alphaedge_user", JSON.stringify(user));
+          window.dispatchEvent(new Event("auth-complete"));
           onAuth(user);
         }
       } else {
@@ -117,6 +118,7 @@ export default function AuthModal({ onClose, onAuth }: Props) {
         };
         localStorage.setItem("alphaedge_token", data.token);
         localStorage.setItem("alphaedge_user", JSON.stringify(user));
+        window.dispatchEvent(new Event("auth-complete"));
         onAuth(user);
       }
     } catch (e: any) {
