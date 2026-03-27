@@ -11,10 +11,11 @@ from typing import List, Optional, Dict, Any
 import simulation
 import correlations
 from events import EVENTS, list_all_events, list_categories
-from db import increment_sim_counter, get_stats as get_global_stats
+from db import increment_sim_counter, get_stats as get_global_stats, get_db
 import scenarios
 import time
 import marketplace
+import social  # Ensure social tables (points_ledger, etc.) are created on startup
 
 app = FastAPI(title="MonteCarloo API", version="0.1.0")
 
