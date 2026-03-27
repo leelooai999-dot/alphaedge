@@ -8,12 +8,14 @@ import EventCard from "./EventCard";
 interface Props {
   events: ActiveEvent[];
   onEventsChange: (events: ActiveEvent[]) => void;
+  maxEvents?: number;
+  onUpgradeNeeded?: () => void;
 }
 
 type Category = "all" | "geopolitical" | "macro" | "sector";
 type PickerTab = "templates" | "search";
 
-export default function EventPanel({ events, onEventsChange }: Props) {
+export default function EventPanel({ events, onEventsChange, maxEvents = 999, onUpgradeNeeded }: Props) {
   const [category, setCategory] = useState<Category>("all");
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTab, setPickerTab] = useState<PickerTab>("templates");
@@ -86,6 +88,12 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       const template = EVENT_TEMPLATES.find((t) => t.id === templateId);
       if (!template || events.find((e) => e.id === templateId)) return;
 
+      // Check tier limit
+      if (events.length >= maxEvents) {
+        onUpgradeNeeded?.();
+        return;
+      }
+
       const live = liveOdds[templateId];
       const probability = live ? Math.round(live.odds * 100) : template.polymarketOdds;
 
@@ -99,7 +107,7 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       onEventsChange([...events, newEvent]);
       setShowPicker(false);
     },
-    [events, onEventsChange, liveOdds]
+    [events, onEventsChange, liveOdds, maxEvents, onUpgradeNeeded]
   );
 
   const addPolymarketEvent = useCallback(
@@ -108,6 +116,12 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       const existingId = `pm_${market.slug.replace(/-/g, "_").slice(0, 60)}`;
       if (events.find((e) => e.id === existingId)) return;
 
+      // Check tier limit
+      if (events.length >= maxEvents) {
+        onUpgradeNeeded?.();
+        return;
+      }
+
       const newEvent = createCustomEventFromPolymarket(market);
       onEventsChange([...events, newEvent]);
       setShowPicker(false);
@@ -115,7 +129,7 @@ export default function EventPanel({ events, onEventsChange }: Props) {
       setSearchResults([]);
       setHasSearched(false);
     },
-    [events, onEventsChange]
+    [events, onEventsChange, maxEvents, onUpgradeNeeded]
   );
 
   const updateEvent = useCallback(

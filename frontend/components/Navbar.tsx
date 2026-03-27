@@ -17,6 +17,11 @@ export default function Navbar() {
       const stored = localStorage.getItem("alphaedge_user");
       if (stored) setUser(JSON.parse(stored));
     } catch { /* ignore */ }
+
+    // Listen for auth modal trigger from upgrade flows
+    const handler = () => setShowAuth(true);
+    window.addEventListener("show-auth-modal", handler);
+    return () => window.removeEventListener("show-auth-modal", handler);
   }, []);
 
   const handleLogout = () => {
@@ -41,7 +46,7 @@ export default function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 no-underline">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-cyan-400 flex items-center justify-center text-bg font-bold text-sm">
-              α
+              M
             </div>
             <span className="text-lg font-semibold text-white tracking-tight">
               MonteCarloo
@@ -73,6 +78,12 @@ export default function Navbar() {
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
               Explore
+            </Link>
+            <Link
+              href="/pricing"
+              className="text-sm text-accent hover:text-accent/80 font-medium transition-colors no-underline"
+            >
+              Pricing
             </Link>
             <NotificationBell userId={user?.id || null} />
             {user ? (
@@ -173,6 +184,13 @@ export default function Navbar() {
               onClick={() => setOpen(false)}
             >
               Explore
+            </Link>
+            <Link
+              href="/pricing"
+              className="block py-2 text-sm text-accent font-medium hover:text-accent/80 no-underline"
+              onClick={() => setOpen(false)}
+            >
+              💎 Pricing
             </Link>
             {user ? (
               <>

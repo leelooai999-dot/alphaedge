@@ -4,7 +4,7 @@ MonteCarloo FastAPI Backend Server.
 Wraps the Monte Carlo simulation engine with REST endpoints.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -1202,6 +1202,137 @@ def get_user_scenarios(user_id: str, limit: int = 50):
         return []
     finally:
         conn.close()
+
+
+# --- Billing / Stripe Endpoints ---
+
+class CheckoutRequest(BaseModel):
+    tier: str  # "pro" or "premium"
+
+
+@app.get("/api/billing/config")
+def get_billing_config():
+    """Get Stripe publishable key and tier info for frontend."""
+    import billing
+    return {
+        "publishable_key": billing.STRIPE_PUBLISHABLE_KEY,
+        "tiers": {
+            "free": {
+                "name": "Free",
+                "price": 0,
+                "limits": billing.TIER_LIMITS["free"],
+            },
+            "pro": {
+                "name": "Pro",
+                "price": 49,
+                "limits": billing.TIER_LIMITS["pro"],
+            },
+            "premium": {
+                "name": "Premium",
+                "price": 149,
+                "limits": billing.TIER_LIMITS["premium"],
+            },
+        },
+    }
+
+
+@app.get("/api/billing/tier")
+def get_user_billing_tier(authorization: Optional[str] = None):
+    """Get the current user's tier and limits."""
+    import billing
+    user_id = None
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+    tier = billing.get_user_tier(user_id)
+    return {
+        "tier": tier,
+        "limits": billing.get_tier_limits(tier),
+    }
+
+
+@app.post("/api/billing/checkout")
+def create_checkout(req: CheckoutRequest, authorization: Optional[str] = None):
+    """Create a Stripe checkout session. Requires auth."""
+    if not authorization:
+        raise HTTPException(401, "Login required to upgrade")
+    import auth, billing
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    try:
+        result = billing.create_checkout_session(
+            user_id=user["user_id"],
+            email=user["email"],
+            tier=req.tier,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Checkout failed: {str(e)}")
+
+
+@app.post("/api/billing/portal")
+def create_billing_portal(authorization: Optional[str] = None):
+    """Create a Stripe Customer Portal session for subscription management."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, billing
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    try:
+        return billing.create_portal_session(user["user_id"])
+    except Exception as e:
+        raise HTTPException(500, f"Portal failed: {str(e)}")
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe webhook endpoint."""
+    import billing
+    body = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    
+    if not billing.verify_webhook_signature(body, sig):
+        raise HTTPException(400, "Invalid webhook signature")
+    
+    try:
+        event = json.loads(body)
+        result = billing.process_webhook_event(event)
+        return result
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
+        raise HTTPException(500, f"Webhook error: {str(e)}")
+
+
+@app.get("/api/billing/check-event-limit")
+def check_event_limit(event_count: int = 0, authorization: Optional[str] = None):
+    """Check if user can add more events to a scenario."""
+    import billing
+    user_id = None
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+    return billing.check_event_limit(user_id, event_count)
+
+
+@app.get("/api/billing/check-pine-limit")
+def check_pine_limit(overlay_count: int = 0, authorization: Optional[str] = None):
+    """Check if user can add more Pine Script overlays."""
+    import billing
+    user_id = None
+    if authorization:
+        import auth
+        user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+        if user:
+            user_id = user["user_id"]
+    return billing.check_pine_overlay_limit(user_id, overlay_count)
 
 
 @app.get("/health")

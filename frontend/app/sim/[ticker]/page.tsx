@@ -12,6 +12,7 @@ import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
 import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
+import UpgradeModal from "@/components/UpgradeModal";
 import type { TimeRange } from "@/components/SimChart";
 import type { PineResult, OHLCVData } from "@/lib/pine-import";
 import { getStockOHLCV } from "@/lib/api";
@@ -33,6 +34,34 @@ export default function SimulatorPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
   const [pineResult, setPineResult] = useState<PineResult | null>(null);
+
+  // Tier limits
+  const [userTier, setUserTier] = useState<string>("free");
+  const [maxEvents, setMaxEvents] = useState(2);
+  const [maxPineOverlays, setMaxPineOverlays] = useState(1);
+  const [upgradeModal, setUpgradeModal] = useState<{ open: boolean; reason: "events" | "pine" }>({ open: false, reason: "events" });
+
+  // Load tier limits
+  useEffect(() => {
+    const token = localStorage.getItem("alphaedge_token");
+    const url = `${API_BASE}/api/billing/tier${token ? "" : ""}`;
+    fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const tier = d.tier || "free";
+        setUserTier(tier);
+        const limits = d.limits || {};
+        setMaxEvents(limits.max_events_per_scenario || 2);
+        setMaxPineOverlays(limits.max_pine_overlays || 1);
+      })
+      .catch(() => {
+        // Default to free limits
+        setMaxEvents(2);
+        setMaxPineOverlays(1);
+      });
+  }, []);
 
   // Track last simulation request to prevent stale responses
   const simSeqRef = useRef(0);
@@ -412,7 +441,13 @@ export default function SimulatorPage() {
                 {loading ? "Simulating" : "Run Full Sim"}
               </button>
               <div className="hidden sm:block">
-                <PineImport ohlcvData={ohlcvData} onIndicatorResult={setPineResult} />
+                <PineImport
+                  ohlcvData={ohlcvData}
+                  onIndicatorResult={setPineResult}
+                  maxOverlays={maxPineOverlays}
+                  currentOverlayCount={pineResult ? pineResult.plots.length : 0}
+                  onUpgradeNeeded={() => setUpgradeModal({ open: true, reason: "pine" })}
+                />
               </div>
               <button
                 onClick={handleSave}
@@ -454,7 +489,12 @@ export default function SimulatorPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
           {/* Event panel — shows BELOW chart on mobile, LEFT on desktop */}
           <div className="order-2 lg:order-1 lg:col-span-2 bg-card rounded-2xl border border-border p-3 sm:p-4 max-h-[50vh] lg:max-h-none lg:h-[calc(100vh-140px)] flex flex-col overflow-hidden">
-            <EventPanel events={events} onEventsChange={setEvents} />
+            <EventPanel
+              events={events}
+              onEventsChange={setEvents}
+              maxEvents={maxEvents}
+              onUpgradeNeeded={() => setUpgradeModal({ open: true, reason: "events" })}
+            />
           </div>
           {/* Chart + stats — shows FIRST on mobile */}
           <div className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4">
@@ -509,6 +549,14 @@ export default function SimulatorPage() {
               }
             : null
         }
+      />
+
+      <UpgradeModal
+        isOpen={upgradeModal.open}
+        onClose={() => setUpgradeModal({ ...upgradeModal, open: false })}
+        reason={upgradeModal.reason}
+        currentCount={upgradeModal.reason === "events" ? events.length : (pineResult?.plots.length || 0)}
+        maxAllowed={upgradeModal.reason === "events" ? maxEvents : maxPineOverlays}
       />
     </main>
   );

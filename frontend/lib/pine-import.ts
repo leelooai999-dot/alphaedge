@@ -714,6 +714,21 @@ export function executePineScript(
   code: string, data: OHLCVData,
   inputOverrides?: Record<string, number | boolean | string>
 ): PineResult {
+  // ── v7 AST engine: try first, fall back to v6 regex engine on failure ──
+  try {
+    const { executeWithAST } = require("./pine-executor");
+    const astResult: PineResult = executeWithAST(code, data);
+    // If AST engine produced plots, use it
+    if (astResult.plots.length > 0) {
+      return astResult;
+    }
+    // If AST parsed but produced no plots, fall through to v6
+  } catch (e: any) {
+    // AST engine failed — fall through to v6 regex engine
+    console.warn("[Pine v7 AST] Fallback to v6 regex engine:", e.message || e);
+  }
+
+  // ── v6 regex engine (fallback) ──
   const parsed = parsePineScript(code);
   const errors = [...parsed.errors];
   const len = data.close.length;

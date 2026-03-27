@@ -13,9 +13,12 @@ import {
 interface Props {
   ohlcvData: OHLCVData | null;
   onIndicatorResult: (result: PineResult | null) => void;
+  maxOverlays?: number;
+  currentOverlayCount?: number;
+  onUpgradeNeeded?: () => void;
 }
 
-export default function PineImport({ ohlcvData, onIndicatorResult }: Props) {
+export default function PineImport({ ohlcvData, onIndicatorResult, maxOverlays = 999, currentOverlayCount = 0, onUpgradeNeeded }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [code, setCode] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
@@ -23,6 +26,12 @@ export default function PineImport({ ohlcvData, onIndicatorResult }: Props) {
   const [isRunning, setIsRunning] = useState(false);
 
   const handleImport = () => {
+    // Check tier limit
+    if (currentOverlayCount >= maxOverlays) {
+      onUpgradeNeeded?.();
+      return;
+    }
+
     if (!code.trim()) {
       setErrors(["Paste a Pine Script indicator to import"]);
       return;
