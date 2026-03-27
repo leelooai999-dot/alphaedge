@@ -44,7 +44,7 @@ export default function Navbar() {
               α
             </div>
             <span className="text-lg font-semibold text-white tracking-tight">
-              AlphaEdge
+              MonteCarloo
             </span>
           </Link>
 

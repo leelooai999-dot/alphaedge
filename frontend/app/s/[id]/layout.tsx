@@ -20,14 +20,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const ogImageUrl = `${API_BASE}/api/og/${id}`;
     
     return {
-      title: `${title} | AlphaEdge`,
+      title: `${title} | MonteCarloo`,
       description,
       openGraph: {
         title,
         description,
         images: [{ url: ogImageUrl, width: 1200, height: 630, alt: title }],
         type: "article",
-        siteName: "AlphaEdge",
+        siteName: "MonteCarloo",
       },
       twitter: {
         card: "summary_large_image",
@@ -38,7 +38,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   } catch {
     return {
-      title: "Scenario | AlphaEdge",
+      title: "Scenario | MonteCarloo",
       description: "Stock event simulation",
     };
   }

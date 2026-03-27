@@ -1,5 +1,5 @@
 """
-AlphaEdge Badge System
+MonteCarloo Badge System
 
 Badges are earned (not bought). They appear on profiles and boost credibility.
 Called periodically (nightly build) or when relevant actions occur.

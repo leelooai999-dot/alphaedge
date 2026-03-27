@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AlphaEdge — What-if Stock Event Simulator",
+  title: "MonteCarloo — What-if Stock Event Simulator",
   description:
     "Simulate how geopolitical events, macro shifts, and sector news impact your stocks. Powered by Polymarket odds and Monte Carlo simulation.",
   keywords: ["stock simulator", "monte carlo", "polymarket", "geopolitical events", "stock analysis"],
   openGraph: {
-    title: "AlphaEdge — What-if Stock Event Simulator",
+    title: "MonteCarloo — What-if Stock Event Simulator",
     description: "See the impact of world events on your stocks before they happen.",
     type: "website",
   },

@@ -1,1 +1,1 @@
-# AlphaEdge - What-if Stock Event Simulator
+# MonteCarloo - What-if Stock Event Simulator

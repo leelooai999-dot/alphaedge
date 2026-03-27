@@ -2,7 +2,7 @@
 Polymarket Live Odds Integration.
 
 Fetches live prediction market odds from Polymarket's public API and maps them
-to AlphaEdge events. Uses keyword-based matching with caching.
+to MonteCarloo events. Uses keyword-based matching with caching.
 """
 
 import time
@@ -50,7 +50,7 @@ def _fetch_all_markets() -> List[Dict]:
             },
             headers={
                 "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (compatible; AlphaEdge/1.0)",
+                "User-Agent": "Mozilla/5.0 (compatible; MonteCarloo/1.0)",
             },
             timeout=15,
         )
@@ -97,7 +97,7 @@ def _is_inverse_question(question: str, event_key: str) -> bool:
 
 # ── Event → Market Mapping ─────────────────────────────────────────────────
 
-# Map each AlphaEdge event key to search keywords and relevance filters
+# Map each MonteCarloo event key to search keywords and relevance filters
 EVENT_SEARCH_CONFIG = {
     "iran_escalation": {
         "keywords": ["iran", "iran israel", "iran war"],
@@ -227,7 +227,7 @@ def _fetch_extended_markets(pages: int = 5) -> List[Dict]:
                 },
                 headers={
                     "Accept": "application/json",
-                    "User-Agent": "Mozilla/5.0 (compatible; AlphaEdge/1.0)",
+                    "User-Agent": "Mozilla/5.0 (compatible; MonteCarloo/1.0)",
                 },
                 timeout=15,
             )
@@ -298,7 +298,7 @@ def search_polymarket(query: str, limit: int = 20) -> List[Dict[str, Any]]:
 
 def get_live_odds(event_key: str) -> Optional[Dict[str, Any]]:
     """
-    Get live Polymarket odds for an AlphaEdge event.
+    Get live Polymarket odds for an MonteCarloo event.
 
     Returns:
         {

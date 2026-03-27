@@ -1,5 +1,5 @@
 """
-AlphaEdge User Authentication Module.
+MonteCarloo User Authentication Module.
 
 Lightweight auth system:
 - Anonymous users get a session_id (stored in localStorage on frontend)

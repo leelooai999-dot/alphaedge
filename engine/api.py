@@ -1,5 +1,5 @@
 """
-AlphaEdge FastAPI Backend Server.
+MonteCarloo FastAPI Backend Server.
 
 Wraps the Monte Carlo simulation engine with REST endpoints.
 """
@@ -15,7 +15,7 @@ from db import increment_sim_counter, get_stats as get_global_stats
 import scenarios
 import time
 
-app = FastAPI(title="AlphaEdge API", version="0.1.0")
+app = FastAPI(title="MonteCarloo API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -177,7 +177,7 @@ def get_vol_with_fallback(ticker: str) -> float:
 
 @app.get("/")
 def root():
-    return {"service": "AlphaEdge API", "version": "0.1.0"}
+    return {"service": "MonteCarloo API", "version": "0.1.0"}
 
 
 @app.get("/api/events")

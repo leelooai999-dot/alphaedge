@@ -1,6 +1,6 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
-// © AlphaEdge (alphaedge.io)
+// © MonteCarloo (montecarloo.io)
 //
 // Monte Carlo Confidence Bands
 // Approximates Monte Carlo simulation confidence intervals using
@@ -8,7 +8,7 @@
 // For full Monte Carlo with event simulation: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
-indicator("Monte Carlo Bands [AlphaEdge]", overlay=true, max_lines_count=500)
+indicator("Monte Carlo Bands [MonteCarloo]", overlay=true, max_lines_count=500)
 
 // Inputs
 horizonDays  = input.int(30, "Forecast Horizon (days)", minval=5, maxval=365)
@@ -59,7 +59,7 @@ if barstate.islast
     // Info table
     var table info = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80))
     table.cell(info, 0, 0, "MC Forecast", text_color=color.white, text_size=size.small)
-    table.cell(info, 1, 0, "AlphaEdge", text_color=color.blue, text_size=size.small)
+    table.cell(info, 1, 0, "MonteCarloo", text_color=color.blue, text_size=size.small)
     table.cell(info, 0, 1, "Horizon", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 1, str.tostring(horizonDays) + " days", text_color=color.white, text_size=size.tiny)
     table.cell(info, 0, 2, "Confidence", text_color=color.gray, text_size=size.tiny)
@@ -69,4 +69,4 @@ if barstate.islast
     table.cell(info, 0, 4, "Median Target", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 4, "$" + str.tostring(medianPrice, "#.##"), text_color=color.white, text_size=size.tiny)
     table.cell(info, 0, 5, "Full Sim →", text_color=color.gray, text_size=size.tiny)
-    table.cell(info, 1, 5, "alphaedge.io", text_color=color.blue, text_size=size.tiny)
+    table.cell(info, 1, 5, "montecarloo.io", text_color=color.blue, text_size=size.tiny)

@@ -36,7 +36,7 @@ export default function ShareModal({
 
 See it live → ${scenarioUrl}
 
-Made with @AlphaEdge`;
+Made with @MonteCarloo_io`;
 
   const recordShare = async (platform: string) => {
     try {
@@ -85,7 +85,7 @@ Made with @AlphaEdge`;
   };
 
   const handleReddit = () => {
-    const url = `https://reddit.com/submit?url=${encodeURIComponent(scenarioUrl)}&title=${encodeURIComponent(`$${ticker}: ${title || "Event Simulation"} — AlphaEdge`)}`;
+    const url = `https://reddit.com/submit?url=${encodeURIComponent(scenarioUrl)}&title=${encodeURIComponent(`$${ticker}: ${title || "Event Simulation"} — MonteCarloo`)}`;
     window.open(url, "_blank");
     setShared("reddit");
     recordShare("reddit");
@@ -130,7 +130,7 @@ Made with @AlphaEdge`;
                 <span className="text-white">{eventCount}</span>
               </div>
             </div>
-            <p className="text-[10px] text-muted mt-2">alphaedge.io</p>
+            <p className="text-[10px] text-muted mt-2">montecarloo.io</p>
           </div>
         </div>
 

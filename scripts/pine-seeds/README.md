@@ -1,11 +1,11 @@
-# AlphaEdge Pine Script Seeds
+# MonteCarloo Pine Script Seeds
 
 These Pine Script indicators are designed to be published on TradingView's community.
-Each script includes AlphaEdge branding and links back to alphaedge.io.
+Each script includes MonteCarloo branding and links back to montecarloo.io.
 
 ## Purpose
 Every published script = permanent ad in front of TradingView's 60M+ users.
-Scripts are genuinely useful on their own — the AlphaEdge link is a bonus.
+Scripts are genuinely useful on their own — the MonteCarloo link is a bonus.
 
 ## Scripts
 
@@ -17,7 +17,7 @@ Scripts are genuinely useful on their own — the AlphaEdge link is a bonus.
 
 ## Publishing Checklist
 - [ ] Each script tested on TradingView Chart
-- [ ] Description includes AlphaEdge mention + link
+- [ ] Description includes MonteCarloo mention + link
 - [ ] Script uses `indicator()` not `strategy()`
 - [ ] Each has informational tooltip table
 - [ ] Published under account: leelooai999

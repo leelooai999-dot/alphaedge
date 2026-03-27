@@ -1,5 +1,5 @@
 """
-AlphaEdge Feedback Collection Module.
+MonteCarloo Feedback Collection Module.
 
 Three channels:
 1. Implicit behavioral events (fire-and-forget from frontend)

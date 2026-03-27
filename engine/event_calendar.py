@@ -1,5 +1,5 @@
 """
-AlphaEdge Calendar Module.
+MonteCarloo Calendar Module.
 
 Provides known future dates for scheduled events:
 - FOMC meeting dates (Federal Reserve)
@@ -119,7 +119,7 @@ def get_earnings_history(ticker: str, quarters: int = 4) -> List[dict]:
 
 
 if __name__ == "__main__":
-    print("=== AlphaEdge Calendar Module ===\n")
+    print("=== MonteCarloo Calendar Module ===\n")
     
     print("Next FOMC date:", get_next_fomc_date())
     print("Upcoming FOMC dates:", get_upcoming_fomc_dates(3))

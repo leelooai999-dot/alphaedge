@@ -117,14 +117,14 @@ export default function AuthModal({ onClose, onAuth }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-sm overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-white font-semibold text-sm">
             {mode === "login" ? "Sign In" : "Create Account"}
           </h3>
-          <button onClick={onClose} className="text-muted hover:text-white p-1">✕</button>
+          <button onClick={onClose} className="text-muted hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-border/50 transition-colors text-lg">✕</button>
         </div>
 
         <div className="px-5 py-4 space-y-3">

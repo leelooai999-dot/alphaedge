@@ -123,7 +123,7 @@ export default function SaveScenarioModal({
 
             <div className="flex gap-2">
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my ${ticker} scenario on AlphaEdge 📊`)}&url=${encodeURIComponent(savedUrl)}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my ${ticker} scenario on MonteCarloo 📊`)}&url=${encodeURIComponent(savedUrl)}`}
                 target="_blank"
                 className="flex-1 py-2 bg-bg border border-border rounded-lg text-sm text-white hover:bg-border/50 transition-colors text-center"
               >

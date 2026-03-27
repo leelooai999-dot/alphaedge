@@ -301,7 +301,7 @@ export default function LandingPage() {
       <section className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-10">
-            Why AlphaEdge?
+            Why MonteCarloo?
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {features.map((f) => (
@@ -347,7 +347,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
           <div className="flex items-center gap-2">
             <span className="text-base font-bold">α</span>
-            <span>AlphaEdge © 2025</span>
+            <span>MonteCarloo © 2025</span>
           </div>
           <div className="flex items-center gap-4">
             <Link

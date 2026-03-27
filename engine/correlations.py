@@ -1,5 +1,5 @@
 """
-AlphaEdge Stock-Event Correlation Map.
+MonteCarloo Stock-Event Correlation Map.
 
 Maps which stocks are affected by which event types,
 with sector-level defaults and per-stock overrides.

@@ -212,7 +212,7 @@ def seed_scenarios():
                     {"id": "oil_disruption", "probability": 65, "duration": 45, "impact": 15},
                 ],
                 "result_summary": {"median30d": 162, "probProfit": 68, "eventImpact": 14, "currentPrice": 148},
-                "author_name": "AlphaEdge",
+                "author_name": "MonteCarloo",
                 "tags": "iran,oil,geopolitical",
                 "views": 342,
                 "forks": 12,

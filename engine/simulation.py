@@ -1,5 +1,5 @@
 """
-AlphaEdge Monte Carlo Stock Price Simulation Engine (v5).
+MonteCarloo Monte Carlo Stock Price Simulation Engine (v5).
 
 Simulates stock price paths using Geometric Brownian Motion (GBM)
 with temporal event shaping: anticipation → shock (jump-diffusion) → decay.
@@ -475,7 +475,7 @@ if __name__ == "__main__":
     from datetime import timedelta
 
     print("=" * 60)
-    print("AlphaEdge v5 Temporal Simulation Engine Test")
+    print("MonteCarloo v5 Temporal Simulation Engine Test")
     print("=" * 60)
 
     today = date.today()

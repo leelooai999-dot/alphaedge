@@ -9,7 +9,7 @@ export default function MethodologyPage() {
       <div className="max-w-3xl mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold text-white mb-2">Methodology</h1>
         <p className="text-muted mb-10">
-          How AlphaEdge combines prediction markets with Monte Carlo simulation
+          How MonteCarloo combines prediction markets with Monte Carlo simulation
           to project stock prices under real-world scenarios.
         </p>
 
@@ -119,7 +119,7 @@ export default function MethodologyPage() {
           <div className="bg-bearish/5 border border-bearish/20 rounded-2xl p-6">
             <h3 className="text-lg font-bold text-white mb-2">⚠️ Disclaimer</h3>
             <p className="text-sm text-muted leading-relaxed">
-              AlphaEdge is a <strong className="text-white">simulation tool, not investment advice</strong>.
+              MonteCarloo is a <strong className="text-white">simulation tool, not investment advice</strong>.
               The projections shown are probabilistic models based on historical data and
               market odds. They do not guarantee future performance. Always do your own
               research and consult a qualified financial advisor before making investment

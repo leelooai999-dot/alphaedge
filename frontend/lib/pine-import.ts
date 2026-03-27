@@ -1,5 +1,5 @@
 /**
- * AlphaEdge Pine Script Import Engine (v5.1)
+ * MonteCarloo Pine Script Import Engine (v5.1)
  * 
  * Parses a subset of Pine Script v5 and executes indicator logic
  * on OHLCV price data (both historical and simulated future).
@@ -659,7 +659,22 @@ export function executePineScript(
   const plots: PinePlotLine[] = [];
   const plottedVars = new Set<string>();
   for (const pc of parsed.plotCalls) {
-    const values = vars[pc.varName];
+    let values = vars[pc.varName];
+    
+    // If variable not found, try computing as a direct ta.* call
+    if (!values && pc.varName.includes("ta.")) {
+      const computed = computeTaFunction(pc.varName, data, vars, inputValues);
+      if (computed) {
+        values = computed;
+        vars[pc.varName] = computed; // Cache for potential reuse
+      }
+    }
+    // Also try resolving series references (close, high, low, open, volume)
+    if (!values) {
+      const series = getSeriesOrVar(pc.varName, data, vars);
+      if (series) values = series;
+    }
+    
     if (values) {
       plots.push({
         title: pc.title,

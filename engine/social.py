@@ -1,5 +1,5 @@
 """
-AlphaEdge Social Layer — Comments, Likes, Forks, Follows, Points, Leaderboard.
+MonteCarloo Social Layer — Comments, Likes, Forks, Follows, Points, Leaderboard.
 
 The engagement engine that turns simulations into a social network.
 """

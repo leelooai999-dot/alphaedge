@@ -1,5 +1,5 @@
 """
-AlphaEdge Accuracy Tracking System
+MonteCarloo Accuracy Tracking System
 
 Records predictions when scenarios are saved.
 After the prediction horizon expires, compares predicted vs actual price.

@@ -1,5 +1,5 @@
 """
-AlphaEdge OG Image Generator
+MonteCarloo OG Image Generator
 
 Generates Open Graph preview images for scenario sharing.
 Uses simple SVG-based rendering — no heavy dependencies.
@@ -59,8 +59,8 @@ def generate_og_svg(
   <!-- Logo + branding -->
   <rect x="40" y="30" width="36" height="36" rx="8" fill="{accent}"/>
   <text x="58" y="56" font-family="system-ui,sans-serif" font-size="20" font-weight="700" fill="{bg}" text-anchor="middle">α</text>
-  <text x="88" y="55" font-family="system-ui,sans-serif" font-size="18" font-weight="600" fill="{text}">AlphaEdge</text>
-  <text x="1160" y="55" font-family="system-ui,sans-serif" font-size="13" fill="{muted}" text-anchor="end">alphaedge.io</text>
+  <text x="88" y="55" font-family="system-ui,sans-serif" font-size="18" font-weight="600" fill="{text}">MonteCarloo</text>
+  <text x="1160" y="55" font-family="system-ui,sans-serif" font-size="13" fill="{muted}" text-anchor="end">montecarloo.io</text>
 
   <!-- Main card area -->
   <rect x="40" y="80" width="1120" height="460" rx="16" fill="url(#card_grad)" stroke="{accent}" stroke-opacity="0.2" stroke-width="1"/>

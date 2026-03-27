@@ -1,6 +1,6 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
-// © AlphaEdge (alphaedge.io)
+// © MonteCarloo (montecarloo.io)
 //
 // Earnings IV Crush Predictor
 // Shows the expected pre-earnings IV ramp and post-earnings crush zone.
@@ -8,7 +8,7 @@
 // Full temporal simulation with events: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
-indicator("Earnings IV Crush [AlphaEdge]", overlay=true, max_lines_count=100)
+indicator("Earnings IV Crush [MonteCarloo]", overlay=true, max_lines_count=100)
 
 // Inputs
 daysToEarnings = input.int(14, "Days Until Earnings", minval=1, maxval=90)
@@ -63,7 +63,7 @@ if barstate.islast
     // Info table
     var table info = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80))
     table.cell(info, 0, 0, "Earnings IV", text_color=color.purple, text_size=size.small)
-    table.cell(info, 1, 0, "AlphaEdge", text_color=color.blue, text_size=size.small)
+    table.cell(info, 1, 0, "MonteCarloo", text_color=color.blue, text_size=size.small)
     table.cell(info, 0, 1, "Days to Earnings", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 1, str.tostring(daysToEarnings), text_color=color.yellow, text_size=size.tiny)
     table.cell(info, 0, 2, "Expected Move", text_color=color.gray, text_size=size.tiny)
@@ -71,4 +71,4 @@ if barstate.islast
     table.cell(info, 0, 3, "Bull / Bear", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 3, "$" + str.tostring(postBullish, "#.##") + " / $" + str.tostring(postBearish, "#.##"), text_color=color.white, text_size=size.tiny)
     table.cell(info, 0, 4, "Full Sim →", text_color=color.gray, text_size=size.tiny)
-    table.cell(info, 1, 4, "alphaedge.io", text_color=color.blue, text_size=size.tiny)
+    table.cell(info, 1, 4, "montecarloo.io", text_color=color.blue, text_size=size.tiny)

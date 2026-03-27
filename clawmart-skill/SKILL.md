@@ -1,4 +1,4 @@
-# AlphaEdge — Monte Carlo Stock Event Simulator
+# MonteCarloo — Monte Carlo Stock Event Simulator
 
 ## What It Does
 Simulates how real-world events affect stock prices using Monte Carlo methods with temporal event shaping. Think "What happens to NVDA if China invades Taiwan?" — and get a probability distribution, not a guess.

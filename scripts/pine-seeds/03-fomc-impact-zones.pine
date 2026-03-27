@@ -1,6 +1,6 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
-// © AlphaEdge (alphaedge.io)
+// © MonteCarloo (montecarloo.io)
 //
 // FOMC Impact Zones
 // Marks upcoming FOMC meeting dates with expected move zones.
@@ -8,7 +8,7 @@
 // Full temporal simulation: https://frontend-leeloo-ai.vercel.app/sim/
 
 //@version=5
-indicator("FOMC Impact Zones [AlphaEdge]", overlay=true, max_lines_count=100)
+indicator("FOMC Impact Zones [MonteCarloo]", overlay=true, max_lines_count=100)
 
 // Inputs
 showAnticipation = input.bool(true, "Show Anticipation Phase (3 weeks before)")
@@ -57,8 +57,8 @@ for i = 0 to array.size(fomc_dates) - 1
 if barstate.islast
     var table info = table.new(position.bottom_right, 2, 4, bgcolor=color.new(color.black, 80))
     table.cell(info, 0, 0, "FOMC Zones", text_color=color.yellow, text_size=size.small)
-    table.cell(info, 1, 0, "AlphaEdge", text_color=color.blue, text_size=size.small)
+    table.cell(info, 1, 0, "MonteCarloo", text_color=color.blue, text_size=size.small)
     table.cell(info, 0, 1, "Avg FOMC Move", text_color=color.gray, text_size=size.tiny)
     table.cell(info, 1, 1, "±" + str.tostring(avgFomcMove / close * 100, "#.##") + "%", text_color=color.yellow, text_size=size.tiny)
     table.cell(info, 0, 2, "Temporal Sim →", text_color=color.gray, text_size=size.tiny)
-    table.cell(info, 1, 2, "alphaedge.io", text_color=color.blue, text_size=size.tiny)
+    table.cell(info, 1, 2, "montecarloo.io", text_color=color.blue, text_size=size.tiny)

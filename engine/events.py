@@ -1,5 +1,5 @@
 """
-AlphaEdge Event Definitions and Impact Models.
+MonteCarloo Event Definitions and Impact Models.
 
 Events represent market-moving scenarios that shift drift and volatility
 for stocks in correlated sectors. Each event has adjustable parameters
