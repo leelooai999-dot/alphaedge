@@ -283,11 +283,16 @@ def get_stock_detail(ticker: str):
 
 
 @app.get("/api/stocks/{ticker}/history")
-def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False):
-    """Fetch historical daily prices for a ticker using yfinance, with TTL cache.
-    Pass ?ohlcv=true to get full OHLCV data (needed for Pine Script indicators)."""
+def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False, timeframe: str = "1d"):
+    """Fetch historical prices for a ticker using yfinance, with TTL cache.
+    Pass ?ohlcv=true to get full OHLCV data (needed for Pine Script indicators).
+    Pass ?timeframe=1h|4h|1d|1wk|1mo for different intervals (default: 1d).
+    Note: intraday timeframes (1h, 4h) limited to 60 days of history."""
     ticker = ticker.upper()
-    cache_key = f"{ticker}_{days}_{'ohlcv' if ohlcv else 'close'}"
+    valid_timeframes = {"1h": "1h", "4h": "4h", "1d": "1d", "1wk": "1wk", "1mo": "1mo",
+                        "5m": "5m", "15m": "15m", "30m": "30m", "60m": "1h"}
+    interval = valid_timeframes.get(timeframe, "1d")
+    cache_key = f"{ticker}_{days}_{interval}_{'ohlcv' if ohlcv else 'close'}"
 
     cached = history_cache.get(cache_key)
     if cached is not None:
@@ -296,15 +301,23 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False)
     try:
         import yfinance as yf
         stock = yf.Ticker(ticker)
-        period_map = {7: "5d", 30: "1mo", 60: "3mo", 90: "3mo", 180: "6mo", 365: "1y"}
-        period = period_map.get(days, f"{max(days, 1)}d")
-        hist = stock.history(period=period)
+        # Intraday intervals have limited history: 1h=730d, 5m/15m/30m=60d
+        if interval in ("5m", "15m", "30m"):
+            period = "60d"
+        elif interval in ("1h", "4h"):
+            period = f"{min(days, 730)}d" if days <= 730 else "730d"
+        else:
+            period_map = {7: "5d", 30: "1mo", 60: "3mo", 90: "3mo", 180: "6mo", 365: "1y"}
+            period = period_map.get(days, f"{max(days, 1)}d")
+        hist = stock.history(period=period, interval=interval)
         if hist.empty:
             raise HTTPException(404, f"No price history found for {ticker}")
 
-        # Take only the last `days` data points
-        hist = hist.tail(days)
-        dates = [d.strftime("%Y-%m-%d") for d in hist.index]
+        # Take only the last `days` data points (for daily; for intraday, take all)
+        if interval == "1d":
+            hist = hist.tail(days)
+        date_fmt = "%Y-%m-%d" if interval in ("1d", "1wk", "1mo") else "%Y-%m-%dT%H:%M"
+        dates = [d.strftime(date_fmt) for d in hist.index]
         prices = [round(p, 2) for p in hist["Close"].tolist()]
 
         if ohlcv:
