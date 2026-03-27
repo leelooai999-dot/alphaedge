@@ -4,7 +4,7 @@ MonteCarloo FastAPI Backend Server.
 Wraps the Monte Carlo simulation engine with REST endpoints.
 """
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -637,7 +637,7 @@ def login(req: LoginRequest):
 
 
 @app.get("/api/auth/me")
-def get_current_user(authorization: Optional[str] = None):
+def get_current_user(authorization: Optional[str] = Header(None)):
     """Get current user from auth token. Returns user profile or 401."""
     if not authorization:
         raise HTTPException(401, "No auth token provided")
@@ -652,7 +652,7 @@ def get_current_user(authorization: Optional[str] = None):
 
 
 @app.patch("/api/auth/profile")
-def update_profile(req: ProfileUpdate, authorization: Optional[str] = None):
+def update_profile(req: ProfileUpdate, authorization: Optional[str] = Header(None)):
     """Update user profile. Requires auth token."""
     if not authorization:
         raise HTTPException(401, "No auth token")
@@ -671,7 +671,7 @@ def update_profile(req: ProfileUpdate, authorization: Optional[str] = None):
 
 
 @app.post("/api/auth/logout")
-def logout(authorization: Optional[str] = None):
+def logout(authorization: Optional[str] = Header(None)):
     """Logout (invalidate token)."""
     if authorization:
         token = authorization.replace("Bearer ", "")
@@ -797,7 +797,7 @@ class FollowAction(BaseModel):
 
 
 @app.post("/api/comments")
-def create_comment(req: CommentCreate, authorization: Optional[str] = None):
+def create_comment(req: CommentCreate, authorization: Optional[str] = Header(None)):
     """Add a comment to a scenario."""
     import social
     user_id = None
@@ -830,7 +830,7 @@ def list_comments(scenario_id: str, limit: int = 50, offset: int = 0):
 
 
 @app.post("/api/shares")
-def record_share(req: ShareRecord, authorization: Optional[str] = None):
+def record_share(req: ShareRecord, authorization: Optional[str] = Header(None)):
     """Record a share event for points + analytics."""
     import social
     user_id = None
@@ -844,7 +844,7 @@ def record_share(req: ShareRecord, authorization: Optional[str] = None):
 
 
 @app.post("/api/follow")
-def follow(req: FollowAction, authorization: Optional[str] = None):
+def follow(req: FollowAction, authorization: Optional[str] = Header(None)):
     """Follow a user."""
     if not authorization:
         raise HTTPException(401, "Auth required")
@@ -857,7 +857,7 @@ def follow(req: FollowAction, authorization: Optional[str] = None):
 
 
 @app.delete("/api/follow/{following_id}")
-def unfollow(following_id: str, authorization: Optional[str] = None):
+def unfollow(following_id: str, authorization: Optional[str] = Header(None)):
     """Unfollow a user."""
     if not authorization:
         raise HTTPException(401, "Auth required")
@@ -875,7 +875,7 @@ def get_feed(
     ticker: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
 ):
     """Get scenario feed (trending, new, following)."""
     import social
@@ -918,7 +918,7 @@ def get_leaderboard(
 
 
 @app.get("/api/notifications")
-def get_notifications(user_id: Optional[str] = None, unread_only: bool = False, limit: int = 20, authorization: Optional[str] = None):
+def get_notifications(user_id: Optional[str] = None, unread_only: bool = False, limit: int = 20, authorization: Optional[str] = Header(None)):
     """Get user notifications. Accepts user_id query param or Bearer token."""
     import social
     effective_user_id = user_id
@@ -933,7 +933,7 @@ def get_notifications(user_id: Optional[str] = None, unread_only: bool = False, 
 
 
 @app.post("/api/notifications/read")
-def mark_read(authorization: Optional[str] = None):
+def mark_read(authorization: Optional[str] = Header(None)):
     """Mark all notifications as read."""
     if not authorization:
         raise HTTPException(401, "Auth required")
@@ -1237,7 +1237,7 @@ def get_billing_config():
 
 
 @app.get("/api/billing/tier")
-def get_user_billing_tier(authorization: Optional[str] = None):
+def get_user_billing_tier(authorization: Optional[str] = Header(None)):
     """Get the current user's tier and limits."""
     import billing
     user_id = None
@@ -1254,7 +1254,7 @@ def get_user_billing_tier(authorization: Optional[str] = None):
 
 
 @app.post("/api/billing/checkout")
-def create_checkout(req: CheckoutRequest, authorization: Optional[str] = None):
+def create_checkout(req: CheckoutRequest, authorization: Optional[str] = Header(None)):
     """Create a Stripe checkout session. Requires auth."""
     if not authorization:
         raise HTTPException(401, "Login required to upgrade")
@@ -1276,7 +1276,7 @@ def create_checkout(req: CheckoutRequest, authorization: Optional[str] = None):
 
 
 @app.post("/api/billing/portal")
-def create_billing_portal(authorization: Optional[str] = None):
+def create_billing_portal(authorization: Optional[str] = Header(None)):
     """Create a Stripe Customer Portal session for subscription management."""
     if not authorization:
         raise HTTPException(401, "Auth required")
@@ -1310,7 +1310,7 @@ async def stripe_webhook(request: Request):
 
 
 @app.get("/api/billing/check-event-limit")
-def check_event_limit(event_count: int = 0, authorization: Optional[str] = None):
+def check_event_limit(event_count: int = 0, authorization: Optional[str] = Header(None)):
     """Check if user can add more events to a scenario."""
     import billing
     user_id = None
@@ -1323,7 +1323,7 @@ def check_event_limit(event_count: int = 0, authorization: Optional[str] = None)
 
 
 @app.get("/api/billing/check-pine-limit")
-def check_pine_limit(overlay_count: int = 0, authorization: Optional[str] = None):
+def check_pine_limit(overlay_count: int = 0, authorization: Optional[str] = Header(None)):
     """Check if user can add more Pine Script overlays."""
     import billing
     user_id = None
