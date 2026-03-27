@@ -14,10 +14,10 @@ interface DashboardData {
   listings: {
     id: string;
     title: string;
-    item_type: string;
+    type: string;
     price_cents: number;
     status: string;
-    purchase_count: number;
+    sales_count: number;
     avg_rating: number;
     review_count: number;
     created_at: string;
@@ -28,9 +28,12 @@ interface Purchase {
   id: string;
   listing_id: string;
   listing_title: string;
+  title: string;
   price_paid_cents: number;
+  price_cents: number;
   status: string;
   purchased_at: string;
+  created_at: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -272,7 +275,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-mono text-white">
-                          ${(p.price_cents || p.price_paid_cents / 100).toFixed(0)}
+                          ${((p.price_cents || p.price_paid_cents || 0) / 100).toFixed(0)}
                         </p>
                         <span className={`text-xs ${p.status === "completed" ? "text-green-400" : "text-yellow-400"}`}>
                           {p.status}
