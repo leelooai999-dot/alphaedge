@@ -136,7 +136,20 @@ export default function SimulatorPage() {
                 };
               })
               .filter(Boolean) as ActiveEvent[];
-            if (apiEvents.length > 0) setEvents(apiEvents);
+            if (apiEvents.length > 0) {
+              // Enforce tier limit on initial load
+              const token = localStorage.getItem("alphaedge_token");
+              try {
+                const tierRes = await fetch(`${API_BASE}/api/billing/tier`, {
+                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                const tierData = await tierRes.json();
+                const limit = tierData?.limits?.max_events_per_scenario || 2;
+                setEvents(apiEvents.slice(0, limit));
+              } catch {
+                setEvents(apiEvents.slice(0, 2)); // Default free limit
+              }
+            }
           }
           return;
         } catch (e) {
