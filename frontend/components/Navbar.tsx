@@ -80,6 +80,12 @@ export default function Navbar() {
               Explore
             </Link>
             <Link
+              href="/marketplace"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              🏪 Marketplace
+            </Link>
+            <Link
               href="/pricing"
               className="text-sm text-accent hover:text-accent/80 font-medium transition-colors no-underline"
             >
@@ -184,6 +190,13 @@ export default function Navbar() {
               onClick={() => setOpen(false)}
             >
               Explore
+            </Link>
+            <Link
+              href="/marketplace"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              🏪 Marketplace
             </Link>
             <Link
               href="/pricing"
