@@ -365,9 +365,8 @@ def get_reviews(listing_id: str, limit: int = 20, offset: int = 0) -> dict:
     ).fetchone()[0]
     
     rows = conn.execute("""
-        SELECT r.*, u.display_name as author_name
+        SELECT r.*
         FROM marketplace_reviews r
-        LEFT JOIN users u ON r.user_id = u.id
         WHERE r.listing_id = ?
         ORDER BY r.created_at DESC
         LIMIT ? OFFSET ?
@@ -386,13 +385,22 @@ def get_reviews(listing_id: str, limit: int = 20, offset: int = 0) -> dict:
     for d in dist:
         distribution[d["rating"]] = d["count"]
     
+    # Resolve author names from auth DB
+    def _get_author_name(user_id):
+        try:
+            import auth
+            user = auth._db().execute("SELECT display_name FROM users WHERE id = ?", (user_id,)).fetchone()
+            return user["display_name"] if user else "Anonymous"
+        except:
+            return "Anonymous"
+    
     return {
         "reviews": [{
             "id": r["id"],
             "rating": r["rating"],
             "title": r["title"],
             "body": r["body"],
-            "author_name": r["author_name"] or "Anonymous",
+            "author_name": _get_author_name(r["user_id"]),
             "verified_purchase": bool(r["verified_purchase"]),
             "created_at": r["created_at"],
         } for r in rows],
