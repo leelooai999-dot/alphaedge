@@ -42,9 +42,12 @@ export default function ScenarioPage() {
   const handleFork = async () => {
     const authorName = localStorage.getItem("alphaedge_author") || "Anonymous";
     try {
+      const forkToken = localStorage.getItem("alphaedge_token");
+      const forkHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (forkToken) forkHeaders["Authorization"] = `Bearer ${forkToken}`;
       const res = await fetch(`${API_BASE}/api/scenarios/${id}/fork`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: forkHeaders,
         body: JSON.stringify({ author_name: authorName }),
       });
       if (res.ok) {

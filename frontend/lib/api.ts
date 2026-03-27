@@ -63,9 +63,12 @@ export async function runSimulation(
   } else {
     nSim = days > 180 ? 1000 : days > 90 ? 2000 : 5000;
   }
+  const token = typeof window !== 'undefined' ? localStorage.getItem("alphaedge_token") : null;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}/api/simulate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({
       ticker,
       events,

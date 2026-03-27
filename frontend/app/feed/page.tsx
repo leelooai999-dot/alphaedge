@@ -76,9 +76,12 @@ function EngagementBar({ scenario, currentUserId }: { scenario: FeedScenario; cu
       if (typeof window !== "undefined" && !localStorage.getItem("alphaedge_session")) {
         localStorage.setItem("alphaedge_session", sessionId);
       }
+      const likeToken = localStorage.getItem("alphaedge_token");
+      const likeHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (likeToken) likeHeaders["Authorization"] = `Bearer ${likeToken}`;
       const res = await fetch(`${API_BASE}/api/scenarios/${scenario.id}/like`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: likeHeaders,
         body: JSON.stringify({ user_id: currentUserId, session_id: sessionId }),
       });
       if (res.ok) {

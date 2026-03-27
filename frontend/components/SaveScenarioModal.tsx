@@ -57,9 +57,12 @@ export default function SaveScenarioModal({
 
       const tags = Array.from(new Set(events.map((e) => e.category))).join(",");
 
+      const token = localStorage.getItem("alphaedge_token");
+      const saveHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) saveHeaders["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`${API_BASE}/api/scenarios`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: saveHeaders,
         body: JSON.stringify({
           ticker,
           title: title || `${ticker} Scenario`,

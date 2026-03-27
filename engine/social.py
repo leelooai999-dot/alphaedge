@@ -417,9 +417,13 @@ def get_following_count(user_id: str) -> int:
 
 DAILY_CAPS = {
     "run_simulation": 20,
+    "save_scenario": 50,
     "posted_comment": 20,
     "forked_scenario": 10,
     "shared": 30,
+    "received_like": 100,
+    "received_comment": 100,
+    "received_fork": 50,
 }
 
 

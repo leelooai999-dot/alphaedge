@@ -365,12 +365,24 @@ baseline_cache = TTLCache(default_ttl=300)
 
 
 @app.post("/api/simulate")
-def run_simulation(req: SimulateRequest):
+def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(None)):
     """Run Monte Carlo simulation with events."""
     try:
         increment_sim_counter()
     except Exception:
         pass  # Don't fail simulation if counter breaks
+
+    # Award points for running simulation (1 pt, 20/day cap)
+    if authorization:
+        try:
+            import auth
+            from social import award_points
+            token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+            user = auth.get_user_by_token(token)
+            if user:
+                award_points(user["user_id"], "run_simulation", 1)
+        except Exception:
+            pass  # Never fail simulation for points
     ticker = req.ticker.upper()
 
     # Determine simulation count — fast mode for slider interactions
@@ -470,7 +482,7 @@ class ScenarioLike(BaseModel):
 
 
 @app.post("/api/scenarios")
-def create_scenario(req: ScenarioCreate):
+def create_scenario(req: ScenarioCreate, authorization: Optional[str] = Header(None)):
     """Save a new scenario."""
     result = scenarios.create_scenario(
         ticker=req.ticker,
@@ -499,6 +511,18 @@ def create_scenario(req: ScenarioCreate):
     except Exception as e:
         logger.warning(f"Accuracy tracking failed: {e}")
     
+    # Award points for saving scenario (5 pts, 50/day cap)
+    if authorization:
+        try:
+            import auth
+            from social import award_points
+            token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+            user = auth.get_user_by_token(token)
+            if user and result.get("id"):
+                award_points(user["user_id"], "save_scenario", 5, result["id"])
+        except Exception:
+            pass
+
     return result
 
 
@@ -533,7 +557,7 @@ def get_scenario(scenario_id: str):
 
 
 @app.post("/api/scenarios/{scenario_id}/fork")
-def fork_scenario(scenario_id: str, req: ScenarioFork):
+def fork_scenario(scenario_id: str, req: ScenarioFork, authorization: Optional[str] = Header(None)):
     """Fork a scenario with optional commentary."""
     result = scenarios.fork_scenario(
         scenario_id, 
@@ -543,14 +567,46 @@ def fork_scenario(scenario_id: str, req: ScenarioFork):
     )
     if not result:
         raise HTTPException(404, "Scenario not found")
+    
+    # Award points: 5 pts to forker, 5 pts to original author
+    if authorization:
+        try:
+            import auth
+            from social import award_points
+            token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+            user = auth.get_user_by_token(token)
+            if user:
+                award_points(user["user_id"], "forked_scenario", 5, scenario_id)
+                # Also award original author
+                original = scenarios.get_scenario(scenario_id)
+                if original and original.get("author_id") and original["author_id"] != user["user_id"]:
+                    award_points(original["author_id"], "received_fork", 5, result.get("id", scenario_id))
+        except Exception:
+            pass
+
     return result
 
 
 @app.post("/api/scenarios/{scenario_id}/like")
-def like_scenario(scenario_id: str, req: ScenarioLike):
+def like_scenario(scenario_id: str, req: ScenarioLike, authorization: Optional[str] = Header(None)):
     """Like a scenario. Deduplicates by session_id OR user_id."""
     dedup_key = req.user_id or req.session_id
     newly_liked = scenarios.like_scenario(scenario_id, dedup_key)
+    
+    # Award points to scenario author for receiving a like (1 pt)
+    if newly_liked and authorization:
+        try:
+            import auth
+            from social import award_points
+            token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+            user = auth.get_user_by_token(token)
+            if user:
+                scenario = scenarios.get_scenario(scenario_id)
+                if scenario and scenario.get("author_id") and scenario["author_id"] != user["user_id"]:
+                    award_points(scenario["author_id"], "received_like", 1, scenario_id)
+        except Exception:
+            pass
+
     return {"liked": newly_liked}
 
 
