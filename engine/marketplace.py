@@ -15,7 +15,11 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from dataclasses import dataclass
 
-DB_PATH = os.environ.get("MONTECARLOO_DB", "montecarloo.db")
+# Use same persistent data directory as main DB
+_DATA_DIR = os.environ.get("DATA_DIR", "/data")
+if not os.path.isdir(_DATA_DIR):
+    _DATA_DIR = "/tmp"
+DB_PATH = os.environ.get("MONTECARLOO_DB", os.path.join(_DATA_DIR, "montecarloo.db"))
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY", "")
 PLATFORM_COMMISSION = 0.30  # 30% platform take
 
