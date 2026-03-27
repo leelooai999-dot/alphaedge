@@ -358,14 +358,34 @@ GET /api/swarm/agents/{agent_id}/profile
 → { name, role, accuracy, prediction_history[], personality }
 ```
 
+### LLM: Claude (Anthropic)
+
+**Why Claude over Qwen/GPT:**
+- **Superior reasoning** — Claude excels at nuanced multi-perspective debate. Agents need to represent genuinely different viewpoints, not just paraphrase. Claude's constitutional AI training makes it naturally good at steelmanning opposing positions.
+- **Long context** — Claude handles 200K context windows. Agents need full event history + memory + knowledge graph context in a single pass. No chunking workarounds.
+- **Tool use** — Claude's native tool use lets agents call financial data APIs mid-debate (check current price, pull earnings data, verify claims).
+- **Safety alignment** — Financial simulation needs agents that argue convincingly but don't cross into actual financial advice. Claude's alignment handles this naturally.
+- **We already have it** — Claude API is available on our infrastructure. No new vendor onboarding.
+
+**Model selection by agent tier:**
+| Agent Quality | Model | Use Case |
+|--------------|-------|----------|
+| Background agents (crowd) | Claude 3.5 Haiku | Fast, cheap, generates crowd sentiment noise |
+| Expert agents (10 archetypes) | Claude 4 Sonnet | Deep reasoning, nuanced debate, accurate predictions |
+| Report Agent (synthesis) | Claude 4 Opus | Final consensus, executive-quality analysis |
+
 ### Cost Analysis
 
 | Component | Cost | Notes |
 |-----------|------|-------|
-| LLM (Qwen-Plus via Aliyun) | ~$0.002/agent-round | 20 agents × 10 rounds = $0.40/simulation |
+| Claude Haiku (crowd, 15 agents) | ~$0.0003/agent-round | 15 agents × 10 rounds = $0.045 |
+| Claude Sonnet (experts, 5 agents) | ~$0.003/agent-round | 5 agents × 10 rounds = $0.15 |
+| Claude Opus (report, 1 call) | ~$0.015/report | Final synthesis |
 | Zep Cloud (memory) | Free tier: 1000 sessions/mo | Enough for MVP |
 | Railway (mirofish service) | ~$5/mo (shared) | Same project, new service |
-| **Total per simulation** | **~$0.40** | Free: 2/day, Pro: 20/day, Premium: unlimited |
+| **Total per simulation (Free tier)** | **~$0.21** | 20 agents, 10 rounds |
+| **Total per simulation (Pro tier)** | **~$1.50** | 100 agents, 40 rounds |
+| **Total per simulation (Premium)** | **~$8.00** | 1000 agents, 100 rounds |
 
 ### Tier Limits (v7)
 
@@ -473,14 +493,14 @@ Nobody combines multi-agent social simulation with stock chart visualization. Th
 1. **MiroFish is hot** — 44K stars, trending on GitHub. Building on it now = riding the wave.
 2. **Nobody has verticalized it for finance** — We're first movers in the most valuable vertical.
 3. **Our infrastructure is ready** — Stripe, auth, marketplace, community, charts — all built.
-4. **Cost is minimal** — Qwen-Plus via Aliyun is cheap ($0.40/sim). Zep has a free tier.
+4. **Cost is minimal** — Claude Haiku for crowd ($0.003/round), Sonnet for experts, Opus for reports. ~$0.21/sim at free tier. Zep has a free tier.
 5. **GPL-compatible** — AGPL license allows forking. Our proprietary layer (frontend + community + marketplace) is separate.
 
 ### Risk Assessment
 
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|------------|
-| LLM costs spiral | Medium | High | Implement cost caps per user, use cheaper models for large sims |
+| LLM costs spiral | Medium | High | Haiku for crowd, Sonnet for experts, Opus only for reports. Cost caps per user. Downgrade model tiers if overspend. |
 | Simulation quality is low | Low | High | Start with 20 agents/10 rounds, iterate on agent prompts |
 | MiroFish upstream breaks | Low | Medium | Pin our fork to a stable commit, don't auto-merge |
 | Users don't engage with debates | Low | Medium | A/B test debate panel on vs off, iterate on UX |
