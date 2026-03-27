@@ -93,14 +93,10 @@ function PricingContent() {
   }, []);
 
   const handleUpgrade = async (tier: string) => {
-    // Re-check localStorage in case user just logged in
-    const freshToken = localStorage.getItem("alphaedge_token");
-    if (freshToken && !authToken) {
-      setAuthToken(freshToken);
-    }
+    // Always read fresh from localStorage — React state may be stale after auth modal
+    const token = localStorage.getItem("alphaedge_token");
     
-    const tokenToUse = freshToken || authToken;
-    if (!tokenToUse) {
+    if (!token) {
       // Remember which tier user wanted, then show auth modal
       setPendingUpgrade(tier);
       window.dispatchEvent(new CustomEvent("show-auth-modal"));
@@ -113,7 +109,7 @@ function PricingContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenToUse}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ tier }),
       });
@@ -136,12 +132,13 @@ function PricingContent() {
   };
 
   const handleManage = async () => {
-    if (!authToken) return;
+    const token = localStorage.getItem("alphaedge_token");
+    if (!token) return;
 
     try {
       const res = await fetch(`${API_BASE}/api/billing/portal`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.portal_url) {
