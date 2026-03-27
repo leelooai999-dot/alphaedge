@@ -1442,10 +1442,10 @@ def marketplace_listing_detail(listing_id: str, authorization: Optional[str] = H
     purchased = False
     if authorization:
         token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-        from auth import verify_token
-        user = verify_token(token)
+        import auth
+        user = auth.get_user_by_token(token)
         if user:
-            purchased = marketplace.has_purchased(listing_id, user["id"])
+            purchased = marketplace.has_purchased(listing_id, user["user_id"])
     
     return {
         **listing,
@@ -1465,20 +1465,20 @@ def marketplace_create_listing(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
     # Ensure creator profile exists
-    marketplace.get_or_create_creator(user["id"], user.get("display_name", ""))
+    marketplace.get_or_create_creator(user["user_id"], user.get("display_name", ""))
     
     if "title" not in request_body:
         raise HTTPException(400, "Title is required")
     if "price_cents" not in request_body:
         raise HTTPException(400, "Price is required")
     
-    listing = marketplace.create_listing(user["id"], request_body)
+    listing = marketplace.create_listing(user["user_id"], request_body)
     return listing
 
 
@@ -1492,12 +1492,12 @@ def marketplace_update_listing(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
-    listing = marketplace.update_listing(listing_id, user["id"], request_body)
+    listing = marketplace.update_listing(listing_id, user["user_id"], request_body)
     if not listing:
         raise HTTPException(403, "Not authorized to edit this listing")
     return listing
@@ -1512,12 +1512,12 @@ def marketplace_delete_listing(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
-    deleted = marketplace.delete_listing(listing_id, user["id"])
+    deleted = marketplace.delete_listing(listing_id, user["user_id"])
     if not deleted:
         raise HTTPException(403, "Not authorized or listing not found")
     return {"deleted": True}
@@ -1539,8 +1539,8 @@ def marketplace_create_review(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
@@ -1548,7 +1548,7 @@ def marketplace_create_review(
         raise HTTPException(400, "Rating 1-5 is required")
     
     try:
-        review = marketplace.create_review(listing_id, user["id"], request_body)
+        review = marketplace.create_review(listing_id, user["user_id"], request_body)
         return review
     except Exception as e:
         raise HTTPException(400, str(e))
@@ -1563,13 +1563,13 @@ def marketplace_purchase(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
     try:
-        result = marketplace.create_purchase(listing_id, user["id"])
+        result = marketplace.create_purchase(listing_id, user["user_id"])
         return result
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -1581,12 +1581,12 @@ def marketplace_my_purchases(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
-    return marketplace.get_my_purchases(user["id"])
+    return marketplace.get_my_purchases(user["user_id"])
 
 
 @app.get("/api/marketplace/creator/dashboard")
@@ -1595,12 +1595,14 @@ def marketplace_creator_dashboard(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
-    dashboard = marketplace.get_creator_dashboard(user["id"])
+    # Auto-create creator profile if needed
+    marketplace.get_or_create_creator(user["user_id"], user.get("display_name", ""))
+    dashboard = marketplace.get_creator_dashboard(user["user_id"])
     if "error" in dashboard:
         raise HTTPException(404, dashboard["error"])
     return dashboard
@@ -1615,13 +1617,13 @@ def marketplace_update_creator(
     if not authorization:
         raise HTTPException(401, "Login required")
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
-    from auth import verify_token
-    user = verify_token(token)
+    import auth
+    user = auth.get_user_by_token(token)
     if not user:
         raise HTTPException(401, "Invalid token")
     
-    marketplace.get_or_create_creator(user["id"], user.get("display_name", ""))
-    profile = marketplace.update_creator_profile(user["id"], request_body)
+    marketplace.get_or_create_creator(user["user_id"], user.get("display_name", ""))
+    profile = marketplace.update_creator_profile(user["user_id"], request_body)
     return profile
 
 

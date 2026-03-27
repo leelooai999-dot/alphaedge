@@ -9,17 +9,19 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 interface Listing {
   id: string;
   title: string;
+  subtitle: string;
+  tagline: string;
   description: string;
   category: string;
-  item_type: string;
+  type: string;
   price_cents: number;
+  price: number;
   creator_id: string;
-  creator_name: string;
   status: string;
   tags: string[];
   avg_rating: number;
   review_count: number;
-  purchase_count: number;
+  sales_count: number;
   created_at: string;
 }
 
@@ -73,10 +75,13 @@ export default function MarketplacePage() {
           fetch(`${API_BASE}/api/marketplace/listings`),
           fetch(`${API_BASE}/api/marketplace/categories`),
         ]);
-        if (listRes.ok) setListings(await listRes.json());
+        if (listRes.ok) {
+          const data = await listRes.json();
+          setListings(data.listings || data);
+        }
         if (catRes.ok) {
           const cats = await catRes.json();
-          setCategories(cats.map((c: any) => c.category));
+          setCategories(Array.isArray(cats) ? cats.map((c: any) => typeof c === 'string' ? c : c.category) : []);
         }
       } catch {}
       setLoading(false);
@@ -89,11 +94,11 @@ export default function MarketplacePage() {
       if (search && !l.title.toLowerCase().includes(search.toLowerCase()) &&
           !l.description.toLowerCase().includes(search.toLowerCase())) return false;
       if (selectedCategory && l.category !== selectedCategory) return false;
-      if (selectedType && l.item_type !== selectedType) return false;
+      if (selectedType && l.type !== selectedType) return false;
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === "popular") return b.purchase_count - a.purchase_count;
+      if (sortBy === "popular") return b.sales_count - a.sales_count;
       if (sortBy === "rating") return b.avg_rating - a.avg_rating;
       if (sortBy === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       if (sortBy === "price_low") return a.price_cents - b.price_cents;
@@ -203,8 +208,8 @@ export default function MarketplacePage() {
                 >
                   {/* Type badge */}
                   <div className="flex items-center justify-between mb-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[listing.item_type] || TYPE_COLORS.skill}`}>
-                      {TYPE_ICONS[listing.item_type] || "⚡"} {listing.item_type}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[listing.type] || TYPE_COLORS.skill}`}>
+                      {TYPE_ICONS[listing.type] || "⚡"} {listing.type}
                     </span>
                     <span className="text-lg font-bold text-white">
                       ${(listing.price_cents / 100).toFixed(0)}
@@ -223,14 +228,14 @@ export default function MarketplacePage() {
                   <div className="flex items-center justify-between">
                     <StarRating rating={listing.avg_rating} count={listing.review_count} />
                     <span className="text-xs text-muted">
-                      {listing.purchase_count} sold
+                      {listing.sales_count} sold
                     </span>
                   </div>
 
                   {/* Creator */}
                   <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
                     <span className="text-xs text-muted">
-                      by <span className="text-white">{listing.creator_name || "MonteCarloo"}</span>
+                      by <span className="text-white">{listing.creator_id === "system-montecarloo" ? "MonteCarloo" : listing.creator_id}</span>
                     </span>
                     {listing.tags?.length > 0 && (
                       <div className="flex gap-1">

@@ -10,19 +10,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 interface Listing {
   id: string;
   title: string;
+  subtitle: string;
+  tagline: string;
   description: string;
-  long_description: string;
   category: string;
-  item_type: string;
+  type: string;
   price_cents: number;
+  price: number;
   creator_id: string;
-  creator_name: string;
   status: string;
   tags: string[];
   avg_rating: number;
   review_count: number;
-  purchase_count: number;
-  preview_data: any;
+  sales_count: number;
+  capabilities: string[];
   created_at: string;
 }
 
@@ -213,12 +214,12 @@ export default function ListingDetailPage() {
               <div className="bg-card border border-border rounded-2xl p-6">
                 <div className="flex items-start gap-4">
                   <div className="w-14 h-14 rounded-xl bg-accent/10 flex items-center justify-center text-2xl flex-shrink-0">
-                    {TYPE_ICONS[listing.item_type] || "⚡"}
+                    {TYPE_ICONS[listing.type] || "⚡"}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
-                        {listing.item_type}
+                        {listing.type}
                       </span>
                       <span className="text-xs text-muted">{listing.category}</span>
                     </div>
@@ -237,7 +238,7 @@ export default function ListingDetailPage() {
                     </span>
                   </div>
                   <span className="text-muted">·</span>
-                  <span className="text-muted">{listing.purchase_count} sold</span>
+                  <span className="text-muted">{listing.sales_count} sold</span>
                 </div>
 
                 {listing.tags?.length > 0 && (
@@ -255,7 +256,7 @@ export default function ListingDetailPage() {
               <div className="bg-card border border-border rounded-2xl p-6">
                 <h2 className="text-lg font-semibold text-white mb-3">About</h2>
                 <div className="text-sm text-muted leading-relaxed whitespace-pre-wrap">
-                  {listing.long_description || listing.description}
+                  {listing.description}
                 </div>
               </div>
 
@@ -366,7 +367,7 @@ export default function ListingDetailPage() {
                 <div className="space-y-3 pt-3 border-t border-border">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Type</span>
-                    <span className="text-white">{TYPE_ICONS[listing.item_type]} {listing.item_type}</span>
+                    <span className="text-white">{TYPE_ICONS[listing.type]} {listing.type}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Category</span>
@@ -374,7 +375,7 @@ export default function ListingDetailPage() {
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Creator</span>
-                    <span className="text-white">{listing.creator_name || "MonteCarloo"}</span>
+                    <span className="text-white">{listing.creator_id === "system-montecarloo" ? "MonteCarloo" : listing.creator_id}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted">Listed</span>

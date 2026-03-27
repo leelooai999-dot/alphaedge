@@ -210,11 +210,11 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-muted">
-                          <span>{listing.item_type}</span>
+                          <span>{listing.type}</span>
                           <span>·</span>
                           <span>${(listing.price_cents / 100).toFixed(0)}</span>
                           <span>·</span>
-                          <span>{listing.purchase_count} sales</span>
+                          <span>{listing.sales_count} sales</span>
                           {listing.avg_rating > 0 && (
                             <>
                               <span>·</span>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-mono font-semibold text-white">
-                          ${((listing.price_cents * listing.purchase_count * 0.7) / 100).toFixed(0)}
+                          ${((listing.price_cents * listing.sales_count * 0.7) / 100).toFixed(0)}
                         </p>
                         <p className="text-xs text-muted">earned</p>
                       </div>
@@ -264,15 +264,15 @@ export default function DashboardPage() {
                           href={`/marketplace/${p.listing_id}`}
                           className="text-sm font-semibold text-white hover:text-accent no-underline"
                         >
-                          {p.listing_title}
+                          {p.title || p.listing_title}
                         </Link>
                         <p className="text-xs text-muted mt-0.5">
-                          Purchased {new Date(p.purchased_at).toLocaleDateString()}
+                          Purchased {new Date(p.created_at || p.purchased_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-mono text-white">
-                          ${(p.price_paid_cents / 100).toFixed(0)}
+                          ${(p.price_cents || p.price_paid_cents / 100).toFixed(0)}
                         </p>
                         <span className={`text-xs ${p.status === "completed" ? "text-green-400" : "text-yellow-400"}`}>
                           {p.status}
