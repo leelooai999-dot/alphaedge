@@ -723,6 +723,53 @@ Each version builds on the last:
 
 ---
 
-*"The best predictions are the ones that survive public debate." — AlphaEdge*
+## LAYER 5: MONTECARLOO MARKETPLACE — "Etsy for Financial AI"
+
+**Added March 27, 2026 — Native marketplace instead of ClawMart dependency**
+
+### Strategic Shift
+Instead of listing on ShopClawMart.com (third-party), we build our **own marketplace natively on montecarloo.com**. This gives us:
+- 30% commission on all sales (vs paying ClawMart's cut)
+- Full control over creator experience and data
+- Vertical focus on finance (ClawMart is general-purpose)
+- Integration with our simulator (buy a persona → immediately use it to run simulations)
+
+### What We Sell
+1. **AI Analyst Personas** ($49-$199) — Pre-configured financial AI personalities
+2. **Simulation Skills** ($9-$49) — Event templates, Pine Script packs, sector models  
+3. **Data Add-ons** ($29-$99/mo) — Premium data feeds (Polymarket real-time, dark pool flow, insider trades)
+
+### Our First Listing: MonteCarloo Analyst ($99)
+- Temporal simulation expert personality
+- Pre-loaded with 18+ event models and temporal profiles
+- Generates Pine Script indicators from simulation results
+- Trained on Monte Carlo methodology + event impact analysis
+- Accuracy tracking with verified prediction history
+
+### Creator Economy
+- **70/30 split** — Creators get 70%, MonteCarloo gets 30%
+- **Creator Dashboard** — Revenue analytics, sales tracking, review management
+- **Stripe Connect** — Automatic payouts to creators
+- **Reputation system** — Accuracy tracking makes our marketplace unique: buyers can verify if a creator's AI actually predicts well
+- **Creator referral** — 5% on referred creators' sales (Year 1)
+
+### Revenue Projections
+- Month 1: 5 listings × 20 sales × $49 avg = $294/mo (platform share)
+- Month 6: 50 listings × 500 sales × $69 avg = $10,350/mo
+- Month 12: 150 listings × 2,000 sales × $79 avg = $47,400/mo
+- Combined with subscriptions: **$130K+/mo by Month 12**
+
+### Pages to Build
+- `/marketplace` — Browse, search, filter by type/category/price
+- `/marketplace/[id]` — Listing detail (modeled after ClawMart Felix page)
+- `/marketplace/create` — Create new listing (creator only)
+- `/marketplace/dashboard` — Creator dashboard with revenue analytics
+- `/marketplace/purchases` — My purchases
+
+### Full spec: `marketplace-proposal.md` (standalone file)
+
+---
+
+*"The best predictions are the ones that survive public debate." — MonteCarloo*
 
 *This is a strategic document. Not investment advice. Consult a securities lawyer before accepting payment for financial content.*
