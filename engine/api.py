@@ -389,7 +389,7 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
     # Determine simulation count — fast mode for slider interactions
     n_sim = req.n_simulations
     if req.fast:
-        n_sim = 500
+        n_sim = 2000  # was 500 — smoother chart, still sub-second
 
     # Get price + vol from cache (avoid redundant yfinance calls)
     price = get_price_with_fallback(ticker)
@@ -425,7 +425,7 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
 
     # Limit paths for fast mode and long horizons (reduce response size)
     if req.fast:
-        max_paths = 15
+        max_paths = 30  # was 15 — smoother confidence bands
     elif req.horizon_days > 180:
         max_paths = 30
     else:

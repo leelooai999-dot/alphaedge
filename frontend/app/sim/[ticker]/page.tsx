@@ -360,7 +360,7 @@ export default function SimulatorPage() {
   useEffect(() => {
     if (!stock || !result) return; // Only re-simulate after initial result exists
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSim(true), 500);
+    debounceRef.current = setTimeout(() => runSim(true), 250);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [events, stock, result, runSim, timeRange]);
 

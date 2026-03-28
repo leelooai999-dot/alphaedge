@@ -114,12 +114,15 @@ def calculate_event_impact(
         base_vol = 1.0
 
     param_values = event_params.copy()
-    severity = param_values.get("severity", 5.0) / 5.0
-    duration = param_values.get("duration_days", 30.0) / 60.0
+    # Scale severity more aggressively so slider changes are visible on chart
+    raw_severity = param_values.get("severity", 5.0)
+    severity = (raw_severity / 5.0) ** 0.7  # less dampening than linear
+    duration = max(param_values.get("duration_days", 30.0) / 30.0, 0.3)  # 30d = 1.0, not 0.5
 
     prob_factor = probability
-    drift_adjustment = base_drift * severity * duration * prob_factor
-    vol_multiplier = 1.0 + (base_vol - 1.0) * severity * prob_factor
+    # Amplify drift so chart visually responds to event changes
+    drift_adjustment = base_drift * severity * duration * prob_factor * 2.0
+    vol_multiplier = 1.0 + (base_vol - 1.0) * severity * prob_factor * 1.5
 
     days_ahead = param_values.get("duration_days", 30)
     target_impact_pct = drift_adjustment * 252 * (days_ahead / 252) * prob_factor * 100
@@ -304,7 +307,9 @@ def simulate(
         base_drift = sector_impact.drift if sector_impact else 0.0
         base_vol = sector_impact.vol_multiplier if sector_impact else 1.0
 
-        severity_scale = (params.get("severity", 5.0) / 5.0) * (params.get("duration_days", 30.0) / 60.0)
+        # Match amplified scaling from flat impact calc
+        raw_sev = params.get("severity", 5.0)
+        severity_scale = ((raw_sev / 5.0) ** 0.7) * max(params.get("duration_days", 30.0) / 30.0, 0.3) * 2.0
 
         if event_date_str and event_def.temporal_profile:
             # v5 temporal event
