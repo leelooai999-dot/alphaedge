@@ -85,7 +85,7 @@ export default function CommentThread({ scenarioId }: { scenarioId: string }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [authorName, setAuthorName] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const loadComments = useCallback(async () => {
     try {
