@@ -1636,6 +1636,143 @@ def marketplace_creator_public(creator_id: str):
     return profile
 
 
+# ---------------------------------------------------------------------------
+# Character Simulation Endpoints (v7.1)
+# ---------------------------------------------------------------------------
+
+class CharacterSimRequest(BaseModel):
+    ticker: str
+    event_id: str
+    event_name: str
+    event_description: str = ""
+    probability: float = 0.5
+    duration_days: int = 30
+    num_rounds: int = 10
+    max_main_characters: int = 3
+    max_analysts: int = 5
+
+class CharacterChatRequest(BaseModel):
+    character_id: str
+    message: str
+    ticker: str
+    current_price: float = 0
+    event_context: str = ""
+    history: List[Dict] = []
+
+@app.get("/api/characters")
+def list_characters():
+    """List all available simulation characters."""
+    import characters
+    return characters.list_characters()
+
+@app.post("/api/characters/simulate")
+def run_character_sim(req: CharacterSimRequest, authorization: Optional[str] = Header(None)):
+    """Run a character-driven simulation. Returns debate rounds + consensus."""
+    import characters
+    
+    # Get current price for the ticker
+    try:
+        import yfinance as yf
+        stock = yf.Ticker(req.ticker)
+        hist = stock.history(period="1d")
+        current_price = float(hist["Close"].iloc[-1]) if len(hist) > 0 else 100.0
+    except Exception:
+        current_price = 100.0
+    
+    # Tier limits
+    max_rounds = req.num_rounds
+    max_main = req.max_main_characters
+    max_analysts = req.max_analysts
+    
+    if authorization:
+        import auth
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        user = auth.get_user_by_token(token)
+        if user:
+            import billing
+            tier = billing.get_user_tier(user["user_id"])
+            if tier == "pro":
+                max_rounds = min(max_rounds, 40)
+                max_main = min(max_main, 5)
+                max_analysts = min(max_analysts, 10)
+            elif tier == "premium":
+                max_rounds = min(max_rounds, 100)
+                max_main = min(max_main, 8)
+                max_analysts = min(max_analysts, 15)
+            else:  # free
+                max_rounds = min(max_rounds, 10)
+                max_main = min(max_main, 3)
+                max_analysts = min(max_analysts, 5)
+    else:
+        max_rounds = min(max_rounds, 10)
+        max_main = min(max_main, 3)
+        max_analysts = min(max_analysts, 5)
+    
+    try:
+        result = characters.run_simulation_sync(
+            ticker=req.ticker,
+            current_price=current_price,
+            event_id=req.event_id,
+            event_name=req.event_name,
+            event_description=req.event_description or req.event_name,
+            probability=req.probability,
+            duration_days=req.duration_days,
+            num_rounds=max_rounds,
+            max_main_characters=max_main,
+            max_analysts=max_analysts,
+        )
+        
+        # Award points if authenticated
+        if authorization:
+            try:
+                import auth
+                token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+                user = auth.get_user_by_token(token)
+                if user:
+                    social.award_points(user["user_id"], "run_simulation", 2)  # 2pts for character sim (more expensive)
+            except Exception:
+                pass
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Character simulation error: {e}")
+        raise HTTPException(500, f"Simulation error: {str(e)}")
+
+@app.post("/api/characters/chat")
+def chat_with_character(req: CharacterChatRequest, authorization: Optional[str] = Header(None)):
+    """Chat with a specific character about a stock/event."""
+    import characters
+    
+    # Get current price if not provided
+    current_price = req.current_price
+    if current_price <= 0:
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(req.ticker)
+            hist = stock.history(period="1d")
+            current_price = float(hist["Close"].iloc[-1]) if len(hist) > 0 else 100.0
+        except Exception:
+            current_price = 100.0
+    
+    try:
+        result = characters.chat_with_character(
+            character_id=req.character_id,
+            message=req.message,
+            ticker=req.ticker,
+            current_price=current_price,
+            event_context=req.event_context,
+            history=req.history,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        logger.error(f"Character chat error: {e}")
+        raise HTTPException(500, f"Chat error: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
