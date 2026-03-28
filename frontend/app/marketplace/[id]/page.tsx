@@ -86,8 +86,16 @@ export default function ListingDetailPage() {
           fetch(`${API_BASE}/api/marketplace/listings/${id}`),
           fetch(`${API_BASE}/api/marketplace/listings/${id}/reviews`),
         ]);
-        if (listRes.ok) setListing(await listRes.json());
-        if (revRes.ok) setReviews(await revRes.json());
+        if (listRes.ok) {
+          const data = await listRes.json();
+          setListing(data);
+          // Detail endpoint may include reviews already
+          if (data.reviews) setReviews(data.reviews);
+        }
+        if (revRes.ok) {
+          const revData = await revRes.json();
+          setReviews(revData.reviews || revData);
+        }
       } catch {}
       setLoading(false);
     };
@@ -234,7 +242,7 @@ export default function ListingDetailPage() {
                   <div className="flex items-center gap-1">
                     <StarRating rating={listing.avg_rating} size="lg" />
                     <span className="text-muted ml-1">
-                      {listing.avg_rating.toFixed(1)} ({listing.review_count} reviews)
+                      {(listing.avg_rating || 0).toFixed(1)} ({listing.review_count || 0} reviews)
                     </span>
                   </div>
                   <span className="text-muted">·</span>
