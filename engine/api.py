@@ -100,6 +100,10 @@ class SimulateResponse(BaseModel):
     paths_sample: Optional[List[List[float]]] = None
     baseline_target: Optional[float] = None
     event_impact_usd: Optional[float] = None
+    # v6: Commodity chain data
+    commodity_impacts: Optional[Dict[str, float]] = None  # commodity → % change
+    stock_betas: Optional[Dict[str, float]] = None        # commodity → beta
+    stock_impact_breakdown: Optional[Dict[str, float]] = None  # commodity → stock impact
 
 
 # --- Price Cache (fallback for yfinance rate limits) ---
@@ -431,6 +435,33 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
     else:
         max_paths = 50
 
+    # v6: Compute commodity chain data for UI
+    commodity_impacts_data = None
+    stock_betas_data = None
+    stock_impact_breakdown_data = None
+    try:
+        from commodities import calculate_commodity_impacts
+        from betas import get_stock_betas, get_stock_impact_breakdown
+        
+        flat_events = [{"id": e.id, "params": e.params, "probability": e.probability}
+                       for e in req.events]
+        commodity_impacts_data = calculate_commodity_impacts(flat_events, req.horizon_days)
+        stock_info = simulation.get_stock_info(ticker)
+        stock_betas_data = get_stock_betas(ticker, stock_info.get("sector", ""))
+        if commodity_impacts_data:
+            stock_impact_breakdown_data = get_stock_impact_breakdown(
+                commodity_impacts_data, stock_betas_data
+            )
+        # Round for cleaner JSON
+        if commodity_impacts_data:
+            commodity_impacts_data = {k: round(v, 2) for k, v in commodity_impacts_data.items() if abs(v) > 0.01}
+        if stock_betas_data:
+            stock_betas_data = {k: round(v, 3) for k, v in stock_betas_data.items() if abs(v) > 0.001}
+        if stock_impact_breakdown_data:
+            stock_impact_breakdown_data = {k: round(v, 2) for k, v in stock_impact_breakdown_data.items() if abs(v) > 0.01}
+    except Exception:
+        pass  # Graceful degradation
+
     return SimulateResponse(
         ticker=result.ticker,
         current_price=result.current_price,
@@ -449,6 +480,9 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
         paths_sample=result.paths_sample[:max_paths],
         baseline_target=baseline_target,
         event_impact_usd=event_impact_usd,
+        commodity_impacts=commodity_impacts_data,
+        stock_betas=stock_betas_data,
+        stock_impact_breakdown=stock_impact_breakdown_data,
     )
 
 

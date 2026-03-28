@@ -197,6 +197,37 @@ This is a genuine **first-mover advantage** in a category that doesn't exist yet
 
 ---
 
+---
+
+## SIMULATION ENGINE OVERHAUL: Event → Commodity → Beta → Stock
+
+### The Problem with Current Simulation
+Events directly map to stock sectors with hardcoded drift. This is wrong.
+Real markets work: Event → Commodity → Beta × Exposure → Stock Price.
+
+### The Fix (5-Phase Continuous Improvement)
+See `SIMULATION-IMPROVEMENT-PLAN.md` for full architecture and phase details.
+
+**Phase 1** (3 days): Commodity intermediary layer — events move commodities, commodities move stocks via beta
+**Phase 2** (2 days): Auto-calibrating betas from 90-day rolling correlations via yfinance
+**Phase 3** (3 days): Second-order causal chains with time delays
+**Phase 4** (ongoing): Historical calibration from real market events
+**Phase 5** (ongoing): ML feedback loop — predictions self-correct over time
+
+### Key Example
+```
+Iran War → Oil +20% → CVX (β=0.70): +14%
+                    → DAL (β=-0.30): -6%
+                    → NVDA (β=-0.05): -1%
+
+Add OPEC Cut → Oil compounds to +34.6%
+             → CVX: +24.2% (massive), DAL: -10.4% (crushed)
+```
+
+This replaces the flat "apply drift to sector" model with actual market mechanics.
+
+---
+
 *"The user asks the AI agents about Iran. The agents debate. The consensus appears on the chart. The user trades with conviction."*
 — MonteCarloo v7.2
 

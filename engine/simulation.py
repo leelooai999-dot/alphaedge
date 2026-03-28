@@ -335,21 +335,69 @@ def simulate(
         # v4 flat event (no date or no temporal profile)
         flat_events.append(event)
 
-    # --- Calculate flat event impacts (v4 behavior) ---
+    # --- Calculate flat event impacts via COMMODITY BETA MODEL (v6) ---
+    # Events → commodity impacts → stock betas → drift/vol
     base_drift_annual = 0.07
     flat_drift_adjustment = 0.0
     flat_vol_multiplier = 1.0
     event_impact_breakdown = {}
 
-    for event in flat_events:
-        event_id = event.get("id", "")
-        params = event.get("params", {})
-        probability = event.get("probability", 1.0)
+    try:
+        from commodities import calculate_commodity_impacts, get_event_commodity_breakdown
+        from betas import get_stock_betas, calculate_stock_impact, get_stock_impact_breakdown
 
-        impact = calculate_event_impact(event_id, params, ticker, stock_info, probability)
-        flat_drift_adjustment += impact["drift_adjustment"]
-        flat_vol_multiplier = max(flat_vol_multiplier, impact["vol_multiplier"])
-        event_impact_breakdown[event_id] = impact["target_impact_pct"]
+        stock_sector = stock_info.get("sector", "technology")
+        stock_betas = get_stock_betas(ticker, stock_sector)
+
+        # Calculate net commodity impacts from all flat events
+        commodity_impacts = calculate_commodity_impacts(flat_events, horizon_days)
+        
+        if commodity_impacts:
+            # Calculate stock impact via betas
+            net_stock_pct = calculate_stock_impact(commodity_impacts, stock_betas)
+            
+            # Convert % impact to daily drift adjustment
+            # If net impact is +14% over horizon, daily drift = 14% / horizon_days annualized
+            flat_drift_adjustment = (net_stock_pct / 100.0) / max(horizon_days, 1) * 252
+            
+            # Vol: scale by VIX impact if present
+            vix_change = commodity_impacts.get("VIX", 0.0)
+            if vix_change > 0:
+                flat_vol_multiplier = 1.0 + (vix_change / 100.0) * 0.8  # 40% VIX spike → 1.32x vol
+            elif vix_change < 0:
+                flat_vol_multiplier = max(0.8, 1.0 + (vix_change / 100.0) * 0.3)
+            
+            # Per-event breakdown via commodity chain
+            event_commodity_breakdown = get_event_commodity_breakdown(flat_events)
+            for event in flat_events:
+                eid = event.get("id", "")
+                # Calculate this event's individual contribution
+                event_commodities = {}
+                for cid, pct in event_commodity_breakdown.get(eid, {}).items():
+                    event_commodities[cid] = pct
+                event_stock_pct = calculate_stock_impact(event_commodities, stock_betas)
+                event_impact_breakdown[eid] = round(event_stock_pct, 2)
+        else:
+            # No commodity impact data — fall back to old method
+            for event in flat_events:
+                event_id = event.get("id", "")
+                params = event.get("params", {})
+                probability = event.get("probability", 1.0)
+                impact = calculate_event_impact(event_id, params, ticker, stock_info, probability)
+                flat_drift_adjustment += impact["drift_adjustment"]
+                flat_vol_multiplier = max(flat_vol_multiplier, impact["vol_multiplier"])
+                event_impact_breakdown[event_id] = impact["target_impact_pct"]
+
+    except ImportError:
+        # Fallback: old v4 method if commodities/betas modules not available
+        for event in flat_events:
+            event_id = event.get("id", "")
+            params = event.get("params", {})
+            probability = event.get("probability", 1.0)
+            impact = calculate_event_impact(event_id, params, ticker, stock_info, probability)
+            flat_drift_adjustment += impact["drift_adjustment"]
+            flat_vol_multiplier = max(flat_vol_multiplier, impact["vol_multiplier"])
+            event_impact_breakdown[event_id] = impact["target_impact_pct"]
 
     # --- Estimate temporal event impact for breakdown display ---
     for tev in temporal_events:
