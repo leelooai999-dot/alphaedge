@@ -23,13 +23,15 @@ logger = logging.getLogger("montecarloo.characters")
 # ---------------------------------------------------------------------------
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-SONNET_MODEL = "claude-sonnet-4-20250514"
-HAIKU_MODEL = "claude-3-5-haiku-20241022"
-OPUS_MODEL = "claude-opus-4-20250514"
+# Using Claude Haiku 4.5 for all characters — fast, capable, authorized on our key
+# Upgrade to Sonnet/Opus when key supports them
+SONNET_MODEL = "claude-haiku-4-5-20251001"  # Using Haiku 4.5 as primary (Sonnet not authorized)
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+OPUS_MODEL = "claude-haiku-4-5-20251001"    # Using Haiku 4.5 (Opus not authorized)
 
-# Fallback: try config-style model IDs if the standard ones fail
-SONNET_FALLBACK = "claude-sonnet-4-6"
-HAIKU_FALLBACK = "claude-haiku-4-5-20251001"
+# Fallback
+SONNET_FALLBACK = "claude-3-haiku-20240307"
+HAIKU_FALLBACK = "claude-3-haiku-20240307"
 
 # ---------------------------------------------------------------------------
 # Character Profiles
