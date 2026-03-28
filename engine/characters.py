@@ -27,6 +27,10 @@ SONNET_MODEL = "claude-sonnet-4-20250514"
 HAIKU_MODEL = "claude-3-5-haiku-20241022"
 OPUS_MODEL = "claude-opus-4-20250514"
 
+# Fallback: try config-style model IDs if the standard ones fail
+SONNET_FALLBACK = "claude-sonnet-4-6"
+HAIKU_FALLBACK = "claude-haiku-4-5-20251001"
+
 # ---------------------------------------------------------------------------
 # Character Profiles
 # ---------------------------------------------------------------------------
@@ -385,6 +389,7 @@ ANALYST_CHARACTERS: Dict[str, CharacterProfile] = {
 def _call_claude(model: str, system: str, messages: List[Dict], max_tokens: int = 500) -> str:
     """Call Claude API and return the response text."""
     import urllib.request
+    import urllib.error
     
     if not ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY environment variable not set")
@@ -413,6 +418,16 @@ def _call_claude(model: str, system: str, messages: List[Dict], max_tokens: int 
             if result.get("content") and len(result["content"]) > 0:
                 return result["content"][0]["text"]
             return ""
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        logger.error(f"Claude API HTTP {e.code} ({model}): {error_body[:200]}")
+        # Retry with fallback model if model not found
+        if e.code == 404 or "model" in error_body.lower():
+            fallback = {SONNET_MODEL: SONNET_FALLBACK, HAIKU_MODEL: HAIKU_FALLBACK}.get(model)
+            if fallback and fallback != model:
+                logger.info(f"Retrying with fallback model: {fallback}")
+                return _call_claude(fallback, system, messages, max_tokens)
+        raise
     except Exception as e:
         logger.error(f"Claude API error ({model}): {e}")
         raise
