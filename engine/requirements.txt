@@ -4,3 +4,4 @@ yfinance>=0.2
 scipy>=1.10
 fastapi>=0.100
 uvicorn>=0.20
+stripe>=8.0

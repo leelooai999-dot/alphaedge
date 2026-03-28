@@ -11,17 +11,62 @@ export default function Navbar() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  // Fetch fresh points from backend
+  const refreshPoints = async (u: AuthUser | null) => {
+    if (!u?.id) return;
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch(`${API_BASE}/api/points/${u.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.total === "number" && data.total !== u.points) {
+          const updated = { ...u, points: data.total };
+          setUser(updated);
+          localStorage.setItem("alphaedge_user", JSON.stringify(updated));
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => {
     // Restore auth state from localStorage
+    let restored: AuthUser | null = null;
     try {
       const stored = localStorage.getItem("alphaedge_user");
-      if (stored) setUser(JSON.parse(stored));
+      if (stored) {
+        restored = JSON.parse(stored);
+        setUser(restored);
+      }
     } catch { /* ignore */ }
+
+    // Fetch fresh points on mount
+    if (restored) refreshPoints(restored);
+
+    // Refresh points every 30 seconds
+    const interval = setInterval(() => {
+      try {
+        const s = localStorage.getItem("alphaedge_user");
+        if (s) refreshPoints(JSON.parse(s));
+      } catch {}
+    }, 30000);
+
+    // Refresh on window focus (user comes back to tab)
+    const onFocus = () => {
+      try {
+        const s = localStorage.getItem("alphaedge_user");
+        if (s) refreshPoints(JSON.parse(s));
+      } catch {}
+    };
+    window.addEventListener("focus", onFocus);
 
     // Listen for auth modal trigger from upgrade flows
     const handler = () => setShowAuth(true);
     window.addEventListener("show-auth-modal", handler);
-    return () => window.removeEventListener("show-auth-modal", handler);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("show-auth-modal", handler);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -244,7 +289,7 @@ export default function Navbar() {
       {showAuth && (
         <AuthModal
           onClose={() => setShowAuth(false)}
-          onAuth={(u) => { setUser(u); setShowAuth(false); }}
+          onAuth={(u) => { setUser(u); setShowAuth(false); refreshPoints(u); }}
         />
       )}
     </nav>
