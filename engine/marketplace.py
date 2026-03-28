@@ -466,8 +466,8 @@ def create_purchase(listing_id: str, buyer_id: str) -> dict:
                     "quantity": 1,
                 }],
                 mode="payment",
-                success_url=f"{os.environ.get('FRONTEND_URL', 'https://frontend-leeloo-ai.vercel.app')}/marketplace/{listing_id}?purchased=true",
-                cancel_url=f"{os.environ.get('FRONTEND_URL', 'https://frontend-leeloo-ai.vercel.app')}/marketplace/{listing_id}",
+                success_url=f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}?purchased=true",
+                cancel_url=f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}",
                 metadata={
                     "purchase_id": purchase_id,
                     "listing_id": listing_id,

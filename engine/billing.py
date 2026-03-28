@@ -70,7 +70,7 @@ PRICING = {
     "premium": {"price": 14900, "name": "Premium", "interval": "month"},
 }
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://frontend-leeloo-ai.vercel.app")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://montecarloo.com")
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +226,10 @@ def create_checkout_session(user_id: str, email: str, tier: str) -> Dict[str, st
         "subscription_data[metadata][user_id]": user_id,
         "subscription_data[metadata][tier]": tier,
     })
+    # NOTE: To display "MonteCarloo.com" on checkout, update the Stripe account's
+    # public business name at https://dashboard.stripe.com/settings/public
+    # Set: Business name = "MonteCarloo" and Support URL = "https://montecarloo.com"
+    # This cannot be set via API — it's an account-level setting.
 
     return {
         "checkout_url": session["url"],
