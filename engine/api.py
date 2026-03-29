@@ -1432,6 +1432,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/llm/stats")
+def llm_stats():
+    """Return LLM routing statistics (OpenAI vs Claude fallback)."""
+    try:
+        from llm_router import get_router_stats
+        return get_router_stats()
+    except Exception:
+        return {"error": "LLM router not available"}
+
+
 # ========================
 # MARKETPLACE ENDPOINTS
 # ========================

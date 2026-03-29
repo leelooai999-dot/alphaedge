@@ -385,7 +385,22 @@ ANALYST_CHARACTERS: Dict[str, CharacterProfile] = {
 
 
 # ---------------------------------------------------------------------------
-# Claude API Client
+# LLM Router: OpenAI (Codex free) → Claude fallback
+# ---------------------------------------------------------------------------
+
+def _call_llm_routed(system: str, messages: List[Dict], max_tokens: int = 500) -> str:
+    """Try OpenAI first (free tier), fall back to Claude on rate limit."""
+    try:
+        from llm_router import chat_completion
+        openai_messages = [{"role": "system", "content": system}] + messages
+        return chat_completion(openai_messages, max_tokens=max_tokens, temperature=0.7)
+    except Exception as e:
+        logger.warning(f"LLM router failed, falling back to direct Claude: {e}")
+        return _call_claude(HAIKU_MODEL, system, messages, max_tokens)
+
+
+# ---------------------------------------------------------------------------
+# Claude API Client (direct fallback)
 # ---------------------------------------------------------------------------
 
 def _call_claude(model: str, system: str, messages: List[Dict], max_tokens: int = 500) -> str:
@@ -588,8 +603,7 @@ async def run_character_simulation(
         for char in main_chars:
             try:
                 system = char.system_prompt(event_context)
-                response = _call_claude(
-                    char.model,
+                response = _call_llm_routed(
                     system,
                     [{"role": "user", "content": round_prompt}],
                     max_tokens=300,
@@ -645,8 +659,7 @@ async def run_character_simulation(
         for char in analyst_chars:
             try:
                 system = char.system_prompt(event_context)
-                response = _call_claude(
-                    char.model,
+                response = _call_llm_routed(
                     system,
                     [{"role": "user", "content": analyst_round_prompt}],
                     max_tokens=250,
@@ -904,7 +917,7 @@ def _run_simulation_sync_impl(
         # Main characters
         for char in main_chars:
             try:
-                resp = _call_claude(char.model, char.system_prompt(event_context), [{"role": "user", "content": prompt}], 300)
+                resp = _call_llm_routed(char.system_prompt(event_context), [{"role": "user", "content": prompt}], 300)
                 pred = _extract_prediction(resp, ticker, current_price)
                 reaction = CharacterReaction(char.id, char.name, char.display_name, char.avatar_emoji, char.tier, round_num, resp, pred)
                 sim_round.reactions.append(reaction)
@@ -920,7 +933,7 @@ def _run_simulation_sync_impl(
         
         for char in analyst_chars:
             try:
-                resp = _call_claude(char.model, char.system_prompt(event_context), [{"role": "user", "content": analyst_prompt}], 250)
+                resp = _call_llm_routed(char.system_prompt(event_context), [{"role": "user", "content": analyst_prompt}], 250)
                 pred = _extract_prediction(resp, ticker, current_price)
                 reaction = CharacterReaction(char.id, char.name, char.display_name, char.avatar_emoji, char.tier, round_num, resp, pred)
                 sim_round.reactions.append(reaction)
@@ -986,7 +999,7 @@ def chat_with_character(
             messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
     
-    response = _call_claude(char.model, system, messages, max_tokens=400)
+    response = _call_llm_routed(system, messages, max_tokens=400)
     
     return {
         "character_id": char.id,
