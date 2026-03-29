@@ -78,7 +78,12 @@ export async function runSimulation(
     }),
   });
   if (!res.ok) throw new Error("Simulation failed");
-  return res.json();
+  const data = await res.json();
+  // Map snake_case API fields to camelCase for frontend
+  if (data.commodity_impacts) data.commodityImpacts = data.commodity_impacts;
+  if (data.stock_betas) data.stockBetas = data.stock_betas;
+  if (data.stock_impact_breakdown) data.stockImpactBreakdown = data.stock_impact_breakdown;
+  return data;
 }
 
 export async function getEvents(category?: string): Promise<any[]> {

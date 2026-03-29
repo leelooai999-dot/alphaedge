@@ -45,6 +45,10 @@ export interface SimulationResult {
     impact: number;
     color: string;
   }[];
+  // Commodity beta model fields (v6)
+  commodityImpacts?: Record<string, number>;       // commodity → % change
+  stockBetas?: Record<string, number>;             // commodity → beta exposure
+  stockImpactBreakdown?: Record<string, number>;   // commodity → stock impact %
 }
 
 // All 18 backend events with IDs matching backend exactly.

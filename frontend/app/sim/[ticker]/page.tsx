@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import StockSearch from "@/components/StockSearch";
 import EventPanel from "@/components/EventPanel";
 import ImpactBreakdown from "@/components/ImpactBreakdown";
+import CommodityChain from "@/components/CommodityChain";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
 import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
@@ -543,6 +544,7 @@ export default function SimulatorPage() {
               </div>
             )}
             <ImpactBreakdown result={result} />
+            <CommodityChain result={result} />
           </div>
         </div>
       </div>
