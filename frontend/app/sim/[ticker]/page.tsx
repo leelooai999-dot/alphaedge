@@ -10,10 +10,11 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import CommodityChain from "@/components/CommodityChain";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds } from "@/lib/api";
+import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds, loadBridgeScenario } from "@/lib/api";
 import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
 import UpgradeModal from "@/components/UpgradeModal";
+import PyecesBadge from "@/components/PyecesBadge";
 import type { TimeRange } from "@/components/SimChart";
 import type { PineResult, OHLCVData } from "@/lib/pine-import";
 import { getStockOHLCV } from "@/lib/api";
@@ -42,6 +43,10 @@ export default function SimulatorPage() {
   const [maxPineOverlays, setMaxPineOverlays] = useState(1);
   const [upgradeModal, setUpgradeModal] = useState<{ open: boolean; reason: "events" | "pine" }>({ open: false, reason: "events" });
 
+  // Pyeces bridge state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pyecesData, setPyecesData] = useState<any>(null);
+
   // Load tier limits
   useEffect(() => {
     const token = localStorage.getItem("alphaedge_token");
@@ -62,6 +67,38 @@ export default function SimulatorPage() {
         setMaxEvents(2);
         setMaxPineOverlays(1);
       });
+  }, []);
+
+  // Load Pyeces bridge scenario if ?bridge= param present
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const bridgeId = params.get("bridge");
+    if (!bridgeId) return;
+
+    loadBridgeScenario(bridgeId).then((data) => {
+      if (!data) return;
+      setPyecesData(data.pyeces_data);
+
+      // Auto-populate events from bridge scenario
+      if (data.events && data.events.length > 0) {
+        const bridgeEvents: ActiveEvent[] = data.events.map((e: any) => ({
+          id: e.id || "pyeces_custom",
+          name: e.name || "Pyeces Event",
+          category: "custom" as const,
+          emoji: "🤖",
+          polymarketOdds: e.probability || 50,
+          defaultImpact: Math.abs(e.impact || 5),
+          defaultDuration: e.duration || 14,
+          direction: (e.impact || 0) >= 0 ? "bullish" as const : "bearish" as const,
+          description: data.pyeces_data?.report_summary || "",
+          probability: e.probability || 50,
+          duration: e.duration || 14,
+          impact: e.impact || 5,
+        }));
+        setEvents(bridgeEvents);
+      }
+    });
   }, []);
 
   // Track last simulation request to prevent stale responses
@@ -545,6 +582,7 @@ export default function SimulatorPage() {
             )}
             <ImpactBreakdown result={result} />
             <CommodityChain result={result} />
+            {pyecesData && <PyecesBadge data={pyecesData} />}
           </div>
         </div>
       </div>

@@ -1671,6 +1671,133 @@ def marketplace_creator_public(creator_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Pyeces Bridge Endpoints (v7.2)
+# ---------------------------------------------------------------------------
+
+class PyecesBridgeRequest(BaseModel):
+    source: str = "pyeces"
+    simulation_id: Optional[str] = None
+    ticker: str
+    event_name: str
+    consensus: Dict[str, Any]  # direction, probability, magnitude_pct, peak_impact_days, confidence, agent_votes
+    agent_predictions: Optional[List[Dict[str, Any]]] = None
+    report_summary: Optional[str] = None
+
+
+@app.post("/api/bridge/pyeces")
+def create_bridge_scenario(req: PyecesBridgeRequest):
+    """Accept Pyeces simulation results and create a MonteCarloo scenario."""
+    import json, string, random
+    from datetime import datetime
+
+    consensus = req.consensus
+    probability = float(consensus.get("probability", 0.5))
+    magnitude = float(consensus.get("magnitude_pct", 5.0))
+    duration = int(consensus.get("peak_impact_days", 14))
+    direction = consensus.get("direction", "bullish")
+
+    # Map Pyeces consensus to MonteCarloo event format
+    event = {
+        "id": f"pyeces_{req.simulation_id or 'custom'}",
+        "name": f"{req.event_name} (Pyeces AI)",
+        "probability": probability * 100,  # MonteCarloo uses 0-100
+        "impact": magnitude if direction == "bullish" else -magnitude,
+        "duration": duration,
+        "params": {
+            "probability": probability,
+            "duration_days": duration,
+            "impact_pct": magnitude if direction == "bullish" else -magnitude,
+        },
+    }
+
+    # Generate scenario ID
+    alphabet = string.ascii_lowercase + string.digits
+    scenario_id = "".join(random.choices(alphabet, k=10))
+
+    # Build result summary
+    result_summary = {
+        "direction": direction,
+        "probability": probability,
+        "magnitude_pct": magnitude,
+        "confidence": consensus.get("confidence", 0),
+        "agent_votes": consensus.get("agent_votes", {}),
+    }
+
+    # Store full Pyeces data
+    pyeces_data = {
+        "source": req.source,
+        "simulation_id": req.simulation_id,
+        "consensus": consensus,
+        "agent_predictions": req.agent_predictions or [],
+        "report_summary": req.report_summary,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+    title = f"{req.ticker} — {req.event_name} (Pyeces AI)"
+
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO scenarios
+            (id, ticker, title, description, events, result_summary,
+             author_name, is_public, source, pyeces_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                scenario_id,
+                req.ticker.upper(),
+                title[:200],
+                (req.report_summary or "")[:500],
+                json.dumps([event]),
+                json.dumps(result_summary),
+                "Pyeces AI",
+                1,
+                "pyeces",
+                json.dumps(pyeces_data),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    chart_url = f"https://montecarloo.com/sim/{req.ticker.upper()}?bridge={scenario_id}"
+
+    return {
+        "scenario_id": scenario_id,
+        "chart_url": chart_url,
+        "events_created": [event],
+    }
+
+
+@app.get("/api/bridge/pyeces/{scenario_id}")
+def get_bridge_scenario(scenario_id: str):
+    """Load Pyeces metadata for a bridge scenario."""
+    import json
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, ticker, title, events, result_summary, source, pyeces_data, created_at FROM scenarios WHERE id = ?",
+            (scenario_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Bridge scenario not found")
+
+    return {
+        "scenario_id": row["id"],
+        "ticker": row["ticker"],
+        "title": row["title"],
+        "events": json.loads(row["events"]) if row["events"] else [],
+        "result_summary": json.loads(row["result_summary"]) if row["result_summary"] else {},
+        "source": row["source"],
+        "pyeces_data": json.loads(row["pyeces_data"]) if row["pyeces_data"] else None,
+        "created_at": row["created_at"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Character Simulation Endpoints (v7.1)
 # ---------------------------------------------------------------------------
 

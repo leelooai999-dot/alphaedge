@@ -51,6 +51,10 @@ def init_db():
                 tags TEXT
             );
 
+            -- Pyeces bridge columns (added v7.2)
+            -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE,
+            -- so we add these via separate try/except in Python below.
+
             CREATE INDEX IF NOT EXISTS idx_scenarios_ticker ON scenarios(ticker);
             CREATE INDEX IF NOT EXISTS idx_scenarios_views ON scenarios(views DESC);
             CREATE INDEX IF NOT EXISTS idx_scenarios_created ON scenarios(created_at DESC);
@@ -73,6 +77,18 @@ def init_db():
             INSERT OR IGNORE INTO stats (key, value) VALUES ('today_date', date('now'));
         """)
         conn.commit()
+
+        # Add Pyeces bridge columns if they don't exist (safe migration)
+        for col, coltype, default in [
+            ("source", "TEXT", None),
+            ("pyeces_data", "TEXT", None),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE scenarios ADD COLUMN {col} {coltype}")
+                conn.commit()
+            except Exception:
+                pass  # Column already exists
+
         logger.info(f"Database initialized at {DB_PATH}")
     finally:
         conn.close()

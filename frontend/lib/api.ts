@@ -149,6 +149,14 @@ export async function searchPolymarket(
   }
 }
 
+// --- Pyeces Bridge ---
+
+export async function loadBridgeScenario(bridgeId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/bridge/pyeces/${bridgeId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // --- SWR fetcher helpers ---
 
 export const swrFetcher = (url: string) =>
