@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@next/swc-linux-x64-gnu':
-        specifier: 14.2.29
-        version: 14.2.29
       lightweight-charts:
         specifier: ^5.1.0
         version: 5.1.0
