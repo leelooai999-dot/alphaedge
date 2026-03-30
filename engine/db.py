@@ -210,7 +210,7 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS stats (
                 key TEXT PRIMARY KEY,
-                value INTEGER DEFAULT 0
+                value TEXT DEFAULT '0'
             );
 
             CREATE TABLE IF NOT EXISTS scenario_likes (
@@ -220,8 +220,8 @@ def init_db():
                 PRIMARY KEY (scenario_id, session_id)
             );
 
-            INSERT INTO stats (key, value) VALUES ('total_simulations', 0) ON CONFLICT (key) DO NOTHING;
-            INSERT INTO stats (key, value) VALUES ('simulations_today', 0) ON CONFLICT (key) DO NOTHING;
+            INSERT INTO stats (key, value) VALUES ('total_simulations', '0') ON CONFLICT (key) DO NOTHING;
+            INSERT INTO stats (key, value) VALUES ('simulations_today', '0') ON CONFLICT (key) DO NOTHING;
             INSERT INTO stats (key, value) VALUES ('today_date', CURRENT_DATE::text) ON CONFLICT (key) DO NOTHING;
         """)
         conn.commit()
