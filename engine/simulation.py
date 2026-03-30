@@ -292,14 +292,17 @@ def simulate(
     event_dates_map = {}
     today = date.today()
 
+    # Pre-process: clamp all probabilities to [0,1] before any processing
+    for event in events:
+        p = event.get("probability", 1.0)
+        if p > 1.0:
+            event["probability"] = p / 100.0
+        event["probability"] = max(0.0, min(1.0, event.get("probability", 1.0)))
+
     for event in events:
         event_id = event.get("id", "")
         params = event.get("params", {})
         probability = event.get("probability", 1.0)
-        # Clamp probability to [0, 1] — frontend sends 0.7, but protect against raw 70
-        if probability > 1.0:
-            probability = probability / 100.0
-        probability = max(0.0, min(1.0, probability))
         event_date_str = event.get("event_date", None)
 
         event_def = EVENTS.get(event_id)
