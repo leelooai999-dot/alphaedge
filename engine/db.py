@@ -59,9 +59,6 @@ class PgConnectionWrapper:
         sql = _convert_placeholders(sql)
         cur = self._conn.cursor()
         cur.execute(sql, params or ())
-        if cur.description:
-            keys = [d[0] for d in cur.description]
-            cur._pg_keys = keys
         return PgCursorWrapper(cur)
 
     def executescript(self, sql):
