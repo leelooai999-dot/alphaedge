@@ -16,6 +16,10 @@ import scenarios
 import time
 import marketplace
 import social  # Ensure social tables (points_ledger, etc.) are created on startup
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MonteCarloo API", version="0.1.0")
 
