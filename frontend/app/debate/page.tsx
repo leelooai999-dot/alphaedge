@@ -13,38 +13,53 @@ interface Character {
   expertise: string[];
 }
 
-interface DebateRound {
-  round: number;
+interface Reaction {
   character_id: string;
   character_name: string;
+  display_name: string;
   avatar_emoji: string;
-  role: string;
-  stance: string;
-  position: string;
-  reasoning: string;
-  price_target: number;
-  confidence: number;
-  key_factors: string[];
+  tier: string;
+  round_num: number;
+  action: string;
+  prediction: { direction: string; target_price: number; confidence: number } | null;
+  stock_impact: string | null;
+  responding_to: string | null;
 }
 
-interface Consensus {
-  direction: string;
-  median_target: number;
-  confidence: number;
-  bull_count: number;
-  bear_count: number;
-  neutral_count: number;
-  summary: string;
-  key_agreements: string[];
-  key_disagreements: string[];
+interface Round {
+  round_num: number;
+  phase: string;
+  reactions: Reaction[];
+  consensus: any;
+}
+
+interface CharacterInfo {
+  id: string;
+  name: string;
+  role: string;
+  tier: string;
+  avatar_emoji: string;
 }
 
 interface SimResult {
   ticker: string;
   current_price: number;
-  event: { id: string; name: string; description: string };
-  rounds: DebateRound[];
-  consensus: Consensus;
+  event: string;
+  event_id: string;
+  probability: number;
+  num_rounds: number;
+  rounds: Round[];
+  consensus: {
+    target_price: number;
+    confidence: number;
+    bull_pct: number;
+    bear_pct: number;
+    neutral_pct: number;
+    num_predictions: number;
+  } | null;
+  character_predictions: any[];
+  characters: CharacterInfo[];
+  debate_highlights: string[];
 }
 
 export default function DebatePage() {
@@ -60,14 +75,21 @@ export default function DebatePage() {
   );
   const [probability, setProbability] = useState(70);
   const [duration, setDuration] = useState(30);
-  const [numRounds, setNumRounds] = useState(6);
+  const [numRounds, setNumRounds] = useState(4);
   const [selectedMain, setSelectedMain] = useState<string[]>([]);
   const [selectedAnalysts, setSelectedAnalysts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SimResult | null>(null);
-  const [visibleRounds, setVisibleRounds] = useState(0);
+  const [visibleReactions, setVisibleReactions] = useState(0);
   const [error, setError] = useState("");
   const debateRef = useRef<HTMLDivElement>(null);
+
+  // Flatten all reactions for animation
+  const allReactions: (Reaction & { phase: string })[] = result
+    ? result.rounds.flatMap((r) =>
+        r.reactions.map((rx) => ({ ...rx, phase: r.phase }))
+      )
+    : [];
 
   // Chat state
   const [chatCharacter, setChatCharacter] = useState<string | null>(null);
@@ -84,25 +106,30 @@ export default function DebatePage() {
       .catch(() => {});
   }, []);
 
-  // Animate rounds appearing one by one
+  // Animate reactions appearing one by one
   useEffect(() => {
-    if (result && visibleRounds < result.rounds.length) {
+    if (result && visibleReactions < allReactions.length) {
       const timer = setTimeout(
-        () => setVisibleRounds((v) => v + 1),
-        600
+        () => setVisibleReactions((v) => v + 1),
+        500
       );
       return () => clearTimeout(timer);
     }
-  }, [result, visibleRounds]);
+  }, [result, visibleReactions, allReactions.length]);
 
-  // Auto-scroll to latest round
+  // Auto-scroll to latest reaction
   useEffect(() => {
-    if (debateRef.current && visibleRounds > 0) {
+    if (debateRef.current && visibleReactions > 0) {
       debateRef.current.scrollTop = debateRef.current.scrollHeight;
     }
-  }, [visibleRounds]);
+  }, [visibleReactions]);
 
-  const toggleChar = (id: string, list: string[], setter: (v: string[]) => void, max: number) => {
+  const toggleChar = (
+    id: string,
+    list: string[],
+    setter: (v: string[]) => void,
+    max: number
+  ) => {
     if (list.includes(id)) {
       setter(list.filter((c) => c !== id));
     } else if (list.length < max) {
@@ -114,7 +141,7 @@ export default function DebatePage() {
     setLoading(true);
     setError("");
     setResult(null);
-    setVisibleRounds(0);
+    setVisibleReactions(0);
     setChatCharacter(null);
     setChatHistory([]);
 
@@ -141,15 +168,16 @@ export default function DebatePage() {
           num_rounds: numRounds,
           max_main_characters: Math.min(selectedMain.length || 3, 3),
           max_analysts: Math.min(selectedAnalysts.length || 5, 5),
-          selected_characters: [...selectedMain, ...selectedAnalysts].length > 0
-            ? [...selectedMain, ...selectedAnalysts]
-            : undefined,
         }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+        throw new Error(
+          typeof err.detail === "string"
+            ? err.detail
+            : JSON.stringify(err.detail || err)
+        );
       }
 
       const data = await res.json();
@@ -177,7 +205,7 @@ export default function DebatePage() {
           message: userMsg,
           ticker: result.ticker,
           current_price: result.current_price,
-          event_context: `${result.event.name}: ${result.event.description}`,
+          event_context: `${result.event}: probability ${(result.probability * 100).toFixed(0)}%`,
           history: chatHistory.slice(-10),
         }),
       });
@@ -204,25 +232,64 @@ export default function DebatePage() {
     }
   };
 
-  const stanceColor = (stance: string) => {
-    if (stance === "bullish") return "text-green-400";
-    if (stance === "bearish") return "text-red-400";
-    return "text-yellow-400";
+  const tierBadge = (tier: string) => {
+    if (tier === "main_character")
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 uppercase font-bold">
+          Leader
+        </span>
+      );
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 uppercase font-bold">
+        Analyst
+      </span>
+    );
+  };
+
+  const stanceFromPrediction = (pred: Reaction["prediction"]) => {
+    if (!pred) return "neutral";
+    return pred.direction || "neutral";
   };
 
   const stanceBg = (stance: string) => {
-    if (stance === "bullish") return "border-green-500/30 bg-green-500/5";
-    if (stance === "bearish") return "border-red-500/30 bg-red-500/5";
-    return "border-yellow-500/30 bg-yellow-500/5";
+    if (stance === "bullish" || stance === "up")
+      return "border-green-500/30 bg-green-500/5";
+    if (stance === "bearish" || stance === "down")
+      return "border-red-500/30 bg-red-500/5";
+    return "border-white/10 bg-white/[0.02]";
   };
 
   const presetEvents = [
-    { id: "fed_rate_cut", name: "Fed Rate Cut", desc: "Federal Reserve cuts interest rates unexpectedly" },
-    { id: "iran_escalation", name: "Iran Escalation", desc: "Military conflict escalation in the Middle East" },
-    { id: "chip_export_control", name: "Chip Export Controls", desc: "US tightens semiconductor export restrictions to China" },
-    { id: "tariff_increase", name: "Tariff Increase", desc: "Broad tariff increases on imported goods" },
-    { id: "recession", name: "Recession Signal", desc: "Major economic indicators point to an imminent recession" },
-    { id: "oil_disruption", name: "Oil Supply Disruption", desc: "Major oil supply disruption from key producing region" },
+    {
+      id: "fed_rate_cut",
+      name: "Fed Rate Cut",
+      desc: "Federal Reserve cuts interest rates unexpectedly",
+    },
+    {
+      id: "iran_escalation",
+      name: "Iran Escalation",
+      desc: "Military conflict escalation in the Middle East",
+    },
+    {
+      id: "chip_export_control",
+      name: "Chip Export Controls",
+      desc: "US tightens semiconductor export restrictions to China",
+    },
+    {
+      id: "tariff_increase",
+      name: "Tariff Increase",
+      desc: "Broad tariff increases on imported goods",
+    },
+    {
+      id: "recession",
+      name: "Recession Signal",
+      desc: "Major economic indicators point to an imminent recession",
+    },
+    {
+      id: "oil_disruption",
+      name: "Oil Supply Disruption",
+      desc: "Major oil supply disruption from key producing region",
+    },
   ];
 
   return (
@@ -242,7 +309,7 @@ export default function DebatePage() {
             href="/sim/AAPL"
             className="text-sm text-white/50 hover:text-white/80"
           >
-            ← Back to Simulator
+            ← Simulator
           </Link>
         </div>
       </div>
@@ -254,7 +321,9 @@ export default function DebatePage() {
             {/* Ticker + Event */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-white/60 mb-1">Stock Ticker</label>
+                <label className="block text-sm text-white/60 mb-1">
+                  Stock Ticker
+                </label>
                 <input
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value.toUpperCase())}
@@ -263,7 +332,9 @@ export default function DebatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-white/60 mb-1">Event Scenario</label>
+                <label className="block text-sm text-white/60 mb-1">
+                  Event Scenario
+                </label>
                 <select
                   value={eventId}
                   onChange={(e) => {
@@ -283,6 +354,18 @@ export default function DebatePage() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Event Description */}
+            <div>
+              <label className="block text-sm text-white/60 mb-1">
+                Scenario Description
+              </label>
+              <input
+                value={eventDesc}
+                onChange={(e) => setEventDesc(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm focus:border-purple-500 focus:outline-none"
+              />
             </div>
 
             {/* Sliders */}
@@ -315,12 +398,12 @@ export default function DebatePage() {
               </div>
               <div>
                 <label className="block text-sm text-white/60 mb-1">
-                  Debate Rounds: {numRounds}
+                  Rounds: {numRounds}
                 </label>
                 <input
                   type="range"
-                  min={3}
-                  max={12}
+                  min={2}
+                  max={8}
                   value={numRounds}
                   onChange={(e) => setNumRounds(+e.target.value)}
                   className="w-full accent-purple-500"
@@ -331,16 +414,18 @@ export default function DebatePage() {
             {/* Character Selection */}
             <div>
               <h3 className="text-sm font-semibold text-white/60 mb-3 uppercase tracking-wider">
-                World Leaders (pick up to 3)
+                🌍 World Leaders (pick up to 3)
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {characters.main_characters.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => toggleChar(c.id, selectedMain, setSelectedMain, 3)}
+                    onClick={() =>
+                      toggleChar(c.id, selectedMain, setSelectedMain, 3)
+                    }
                     className={`p-3 rounded-lg border text-left transition-all ${
                       selectedMain.includes(c.id)
-                        ? "border-purple-500 bg-purple-500/10"
+                        ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500/50"
                         : "border-white/10 bg-white/5 hover:border-white/20"
                     }`}
                   >
@@ -354,24 +439,31 @@ export default function DebatePage() {
 
             <div>
               <h3 className="text-sm font-semibold text-white/60 mb-3 uppercase tracking-wider">
-                Analysts (pick up to 5)
+                📊 Analysts (pick up to 5)
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {characters.analysts.map((c) => (
                   <button
                     key={c.id}
                     onClick={() =>
-                      toggleChar(c.id, selectedAnalysts, setSelectedAnalysts, 5)
+                      toggleChar(
+                        c.id,
+                        selectedAnalysts,
+                        setSelectedAnalysts,
+                        5
+                      )
                     }
                     className={`p-3 rounded-lg border text-left transition-all ${
                       selectedAnalysts.includes(c.id)
-                        ? "border-blue-500 bg-blue-500/10"
+                        ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50"
                         : "border-white/10 bg-white/5 hover:border-white/20"
                     }`}
                   >
                     <div className="text-xl mb-1">{c.avatar_emoji}</div>
                     <div className="text-xs font-medium">{c.name}</div>
-                    <div className="text-xs text-white/40 truncate">{c.role}</div>
+                    <div className="text-xs text-white/40 truncate">
+                      {c.role}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -404,7 +496,7 @@ export default function DebatePage() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                     />
                   </svg>
-                  Characters are debating...
+                  Characters are debating... (this takes ~30s)
                 </span>
               ) : (
                 "🎭 Launch Debate"
@@ -412,7 +504,7 @@ export default function DebatePage() {
             </button>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400">
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">
                 {error}
               </div>
             )}
@@ -423,20 +515,22 @@ export default function DebatePage() {
         {result && (
           <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h2 className="text-2xl font-bold">
-                  {result.ticker} — {result.event.name}
+                  {result.ticker} — {result.event}
                 </h2>
                 <p className="text-white/50 text-sm">
-                  Current: ${result.current_price.toFixed(2)} ·{" "}
-                  {result.rounds.length} rounds · {result.event.description}
+                  Current: ${result.current_price.toFixed(2)} · Probability:{" "}
+                  {(result.probability * 100).toFixed(0)}% ·{" "}
+                  {result.characters.length} characters ·{" "}
+                  {result.num_rounds} rounds
                 </p>
               </div>
               <button
                 onClick={() => {
                   setResult(null);
-                  setVisibleRounds(0);
+                  setVisibleReactions(0);
                   setChatCharacter(null);
                   setChatHistory([]);
                 }}
@@ -446,82 +540,127 @@ export default function DebatePage() {
               </button>
             </div>
 
+            {/* Participants */}
+            <div className="flex flex-wrap gap-2">
+              {result.characters.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs"
+                >
+                  <span>{c.avatar_emoji}</span>
+                  <span>{c.name}</span>
+                  {tierBadge(c.tier)}
+                </div>
+              ))}
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Debate Feed */}
               <div className="lg:col-span-2">
                 <div
                   ref={debateRef}
-                  className="space-y-3 max-h-[70vh] overflow-y-auto pr-2"
+                  className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 scroll-smooth"
                 >
-                  {result.rounds.slice(0, visibleRounds).map((round, i) => (
-                    <div
-                      key={i}
-                      className={`border rounded-xl p-4 transition-all duration-500 animate-fadeIn ${stanceBg(
-                        round.stance
-                      )}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <button
-                          onClick={() => {
-                            setChatCharacter(round.character_id);
-                            setChatHistory([]);
-                          }}
-                          className="text-3xl hover:scale-110 transition-transform cursor-pointer"
-                          title={`Chat with ${round.character_name}`}
+                  {allReactions
+                    .slice(0, visibleReactions)
+                    .map((rx, i) => {
+                      const stance = stanceFromPrediction(rx.prediction);
+                      return (
+                        <div
+                          key={i}
+                          className={`border rounded-xl p-4 transition-all duration-500 animate-fadeIn ${stanceBg(
+                            stance
+                          )}`}
                         >
-                          {round.avatar_emoji}
-                        </button>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-sm">
-                              {round.character_name}
-                            </span>
-                            <span className="text-xs text-white/40">
-                              {round.role}
-                            </span>
-                            <span
-                              className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full ${
-                                round.stance === "bullish"
-                                  ? "bg-green-500/20 text-green-400"
-                                  : round.stance === "bearish"
-                                  ? "bg-red-500/20 text-red-400"
-                                  : "bg-yellow-500/20 text-yellow-400"
-                              }`}
+                          <div className="flex items-start gap-3">
+                            <button
+                              onClick={() => {
+                                setChatCharacter(rx.character_id);
+                                setChatHistory([]);
+                              }}
+                              className="text-3xl hover:scale-110 transition-transform cursor-pointer flex-shrink-0"
+                              title={`Chat with ${rx.display_name}`}
                             >
-                              {round.stance}
-                            </span>
-                            <span className="text-xs text-white/30 ml-auto">
-                              Round {round.round}
-                            </span>
-                          </div>
-                          <p className="text-sm text-white/80 mb-2">
-                            {round.position}
-                          </p>
-                          {round.reasoning && (
-                            <p className="text-xs text-white/50 italic mb-2">
-                              {round.reasoning}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-4 text-xs text-white/40">
-                            <span>
-                              Target:{" "}
-                              <span className={stanceColor(round.stance)}>
-                                ${round.price_target?.toFixed(2)}
-                              </span>
-                            </span>
-                            <span>
-                              Confidence: {(round.confidence * 100).toFixed(0)}%
-                            </span>
-                            {round.key_factors?.length > 0 && (
-                              <span className="hidden md:inline">
-                                {round.key_factors.slice(0, 2).join(" · ")}
-                              </span>
-                            )}
+                              {rx.avatar_emoji}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-semibold text-sm">
+                                  {rx.display_name}
+                                </span>
+                                {tierBadge(rx.tier)}
+                                {rx.prediction && (
+                                  <span
+                                    className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full ${
+                                      stance === "bullish" || stance === "up"
+                                        ? "bg-green-500/20 text-green-400"
+                                        : stance === "bearish" ||
+                                          stance === "down"
+                                        ? "bg-red-500/20 text-red-400"
+                                        : "bg-yellow-500/20 text-yellow-400"
+                                    }`}
+                                  >
+                                    {stance}
+                                  </span>
+                                )}
+                                <span className="text-xs text-white/30 ml-auto">
+                                  R{rx.round_num} · {rx.phase.replace(/_/g, " ")}
+                                </span>
+                              </div>
+
+                              {/* Main action/response text */}
+                              <p className="text-sm text-white/80 whitespace-pre-line leading-relaxed">
+                                {rx.action}
+                              </p>
+
+                              {/* Prediction + Impact */}
+                              {(rx.prediction || rx.stock_impact) && (
+                                <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
+                                  {rx.prediction?.target_price && (
+                                    <span>
+                                      Target:{" "}
+                                      <span
+                                        className={
+                                          stance === "bullish" || stance === "up"
+                                            ? "text-green-400"
+                                            : stance === "bearish" ||
+                                              stance === "down"
+                                            ? "text-red-400"
+                                            : "text-yellow-400"
+                                        }
+                                      >
+                                        $
+                                        {rx.prediction.target_price.toFixed(2)}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {rx.prediction?.confidence && (
+                                    <span>
+                                      Confidence:{" "}
+                                      {(rx.prediction.confidence * 100).toFixed(
+                                        0
+                                      )}
+                                      %
+                                    </span>
+                                  )}
+                                  {rx.stock_impact && (
+                                    <span className="hidden md:inline">
+                                      Impact: {rx.stock_impact}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {rx.responding_to && (
+                                <div className="mt-1 text-xs text-white/30 italic">
+                                  → responding to {rx.responding_to}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
 
                   {loading && (
                     <div className="flex items-center justify-center py-8">
@@ -533,80 +672,106 @@ export default function DebatePage() {
                 </div>
               </div>
 
-              {/* Sidebar: Consensus + Chat */}
+              {/* Sidebar */}
               <div className="space-y-4">
                 {/* Consensus */}
-                {visibleRounds >= result.rounds.length && result.consensus && (
-                  <div className="border border-purple-500/30 bg-purple-500/5 rounded-xl p-4 animate-fadeIn">
-                    <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                      <span>🤝</span> Consensus
-                    </h3>
-                    <div
-                      className={`text-2xl font-bold mb-2 ${stanceColor(
-                        result.consensus.direction
-                      )}`}
-                    >
-                      {result.consensus.direction.toUpperCase()}
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 mb-3 text-center">
-                      <div>
-                        <div className="text-green-400 font-bold">
-                          {result.consensus.bull_count}
+                {visibleReactions >= allReactions.length &&
+                  result.consensus && (
+                    <div className="border border-purple-500/30 bg-purple-500/5 rounded-xl p-4 animate-fadeIn">
+                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                        <span>🤝</span> Consensus
+                      </h3>
+                      <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div>
+                          <div className="text-green-400 font-bold text-lg">
+                            {result.consensus.bull_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Bullish</div>
                         </div>
-                        <div className="text-xs text-white/40">Bulls</div>
+                        <div>
+                          <div className="text-yellow-400 font-bold text-lg">
+                            {result.consensus.neutral_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Neutral</div>
+                        </div>
+                        <div>
+                          <div className="text-red-400 font-bold text-lg">
+                            {result.consensus.bear_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Bearish</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-yellow-400 font-bold">
-                          {result.consensus.neutral_count}
+                      {result.consensus.target_price > 0 && (
+                        <div className="text-sm mb-2">
+                          <span className="text-white/50">
+                            Consensus Target:{" "}
+                          </span>
+                          <span className="font-bold text-lg">
+                            ${result.consensus.target_price.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-white/40 ml-2">
+                            (
+                            {(
+                              ((result.consensus.target_price -
+                                result.current_price) /
+                                result.current_price) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
                         </div>
-                        <div className="text-xs text-white/40">Neutral</div>
-                      </div>
-                      <div>
-                        <div className="text-red-400 font-bold">
-                          {result.consensus.bear_count}
-                        </div>
-                        <div className="text-xs text-white/40">Bears</div>
+                      )}
+                      <div className="text-xs text-white/40">
+                        Based on {result.consensus.num_predictions} predictions
+                        · Confidence: {result.consensus.confidence}%
                       </div>
                     </div>
-                    <div className="text-sm mb-2">
-                      <span className="text-white/50">Median Target: </span>
-                      <span className="font-bold">
-                        ${result.consensus.median_target?.toFixed(2)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-white/60 mb-3">
-                      {result.consensus.summary}
-                    </p>
-                    {result.consensus.key_agreements?.length > 0 && (
-                      <div className="mb-2">
-                        <div className="text-xs text-green-400/60 font-semibold mb-1">
-                          Agreements:
-                        </div>
-                        {result.consensus.key_agreements.map((a, i) => (
+                  )}
+
+                {/* Character Predictions */}
+                {visibleReactions >= allReactions.length &&
+                  result.character_predictions?.length > 0 && (
+                    <div className="border border-white/10 rounded-xl p-4">
+                      <h3 className="font-semibold text-sm mb-3">
+                        📊 Price Targets
+                      </h3>
+                      <div className="space-y-2">
+                        {result.character_predictions.map((cp: any, i: number) => (
                           <div
                             key={i}
-                            className="text-xs text-white/50 pl-2 border-l border-green-500/20 mb-1"
+                            className="flex items-center justify-between text-sm"
                           >
-                            {a}
+                            <span className="text-white/60">
+                              {cp.avatar_emoji} {cp.character_name}
+                            </span>
+                            <span
+                              className={`font-mono ${
+                                cp.direction === "up" || cp.direction === "bullish"
+                                  ? "text-green-400"
+                                  : cp.direction === "down" || cp.direction === "bearish"
+                                  ? "text-red-400"
+                                  : "text-yellow-400"
+                              }`}
+                            >
+                              ${cp.target_price?.toFixed(2) || "—"}
+                            </span>
                           </div>
                         ))}
                       </div>
-                    )}
-                    {result.consensus.key_disagreements?.length > 0 && (
-                      <div>
-                        <div className="text-xs text-red-400/60 font-semibold mb-1">
-                          Disagreements:
-                        </div>
-                        {result.consensus.key_disagreements.map((d, i) => (
-                          <div
-                            key={i}
-                            className="text-xs text-white/50 pl-2 border-l border-red-500/20 mb-1"
-                          >
-                            {d}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    </div>
+                  )}
+
+                {/* Debate Highlights */}
+                {result.debate_highlights?.length > 0 && (
+                  <div className="border border-white/10 rounded-xl p-4">
+                    <h3 className="font-semibold text-sm mb-2">⚡ Highlights</h3>
+                    <div className="space-y-1">
+                      {result.debate_highlights.map((h, i) => (
+                        <p key={i} className="text-xs text-white/50">
+                          • {h}
+                        </p>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -619,7 +784,8 @@ export default function DebatePage() {
                         {[
                           ...characters.main_characters,
                           ...characters.analysts,
-                        ].find((c) => c.id === chatCharacter)?.name}
+                        ].find((c) => c.id === chatCharacter)?.name ||
+                          chatCharacter}
                       </h3>
                       <button
                         onClick={() => setChatCharacter(null)}
@@ -630,6 +796,11 @@ export default function DebatePage() {
                     </div>
 
                     <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
+                      {chatHistory.length === 0 && (
+                        <p className="text-xs text-white/30 text-center py-4">
+                          Ask anything about their position...
+                        </p>
+                      )}
                       {chatHistory.map((msg, i) => (
                         <div
                           key={i}
@@ -671,7 +842,7 @@ export default function DebatePage() {
                   </div>
                 )}
 
-                {!chatCharacter && visibleRounds > 0 && (
+                {!chatCharacter && visibleReactions > 0 && (
                   <div className="text-xs text-white/30 text-center p-4 border border-white/5 rounded-xl">
                     👆 Click any character&apos;s emoji to start a private chat
                   </div>
