@@ -63,9 +63,8 @@ class PgConnectionWrapper:
 
     def executescript(self, sql):
         """Execute multiple statements (Postgres doesn't have executescript)."""
-        # Only convert if SQL looks like SQLite syntax (has INSERT OR IGNORE, etc.)
-        if "INSERT OR IGNORE" in sql or "PRAGMA" in sql:
-            sql = _sqlite_to_postgres(sql)
+        # Always convert SQLite syntax to Postgres
+        sql = _sqlite_to_postgres(sql)
         cur = self._conn.cursor()
         cur.execute(sql)
         return cur
