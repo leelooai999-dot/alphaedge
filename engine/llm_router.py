@@ -47,7 +47,7 @@ def _get_anthropic_client():
 
 def chat_completion(
     messages: list,
-    model: str = "gpt-5.3",
+    model: str = "gpt-4o-mini",
     max_tokens: int = 1024,
     temperature: float = 0.7,
     **kwargs,
@@ -120,13 +120,14 @@ def _claude_fallback(
     max_tokens: int = 1024,
     temperature: float = 0.7,
 ) -> str:
-    """Fall back to Claude via Anthropic API."""
+    """Fall back to Claude via Anthropic API, then Z.AI as last resort."""
     global _fallback_count
     _fallback_count += 1
 
     client = _get_anthropic_client()
     if not client:
-        raise RuntimeError("Both OpenAI and Anthropic unavailable — no API keys configured")
+        # Try Z.AI (GLM) as last resort
+        return _zai_fallback(messages, max_tokens=max_tokens, temperature=temperature)
 
     # Convert OpenAI message format to Anthropic format
     system_msg = None
@@ -149,6 +150,31 @@ def _claude_fallback(
         temperature=temperature,
     )
     return response.content[0].text
+
+
+def _zai_fallback(
+    messages: list,
+    max_tokens: int = 1024,
+    temperature: float = 0.7,
+) -> str:
+    """Last resort: Z.AI GLM-4-flash (free tier)."""
+    zai_key = os.environ.get("ZAI_API_KEY", "")
+    if not zai_key:
+        raise RuntimeError("All LLM providers unavailable — no API keys configured (OpenAI, Anthropic, Z.AI)")
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=zai_key, base_url="https://api.z.ai/api/paas/v4")
+        response = client.chat.completions.create(
+            model="glm-4-flash",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        logger.info("Z.AI GLM-4-flash fallback succeeded")
+        return response.choices[0].message.content
+    except Exception as e:
+        raise RuntimeError(f"All LLM providers failed. Z.AI error: {e}")
 
 
 def get_router_stats() -> dict:
