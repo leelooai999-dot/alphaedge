@@ -57,6 +57,9 @@ class PgConnectionWrapper:
     def execute(self, sql, params=None):
         # Convert SQLite ? placeholders to Postgres %s
         sql = _convert_placeholders(sql)
+        # Convert SQLite functions (julianday, datetime) to Postgres equivalents
+        if "julianday" in sql or "datetime('now'" in sql or "date('now')" in sql:
+            sql = _sqlite_to_postgres(sql)
         cur = self._conn.cursor()
         cur.execute(sql, params or ())
         return PgCursorWrapper(cur)
@@ -149,10 +152,19 @@ def _sqlite_to_postgres(sql):
         "VALUES ('today_date', date('now'))",
         "VALUES ('today_date', CURRENT_DATE::text) ON CONFLICT (key) DO NOTHING"
     )
-    # Replace datetime('now', '-7 days') with Postgres equivalent
-    sql = sql.replace("datetime('now', '-7 days')", "(NOW() - INTERVAL '7 days')")
-    sql = sql.replace("datetime('now', '-30 days')", "(NOW() - INTERVAL '30 days')")
+    # Replace datetime('now', '-N days') with Postgres equivalent
+    import re
+    sql = re.sub(r"datetime\('now',\s*'-(\d+)\s+days'\)", r"(NOW() - INTERVAL '\1 days')", sql)
     sql = sql.replace("date('now')", "CURRENT_DATE::text")
+    # Replace julianday() with Postgres EXTRACT(EPOCH FROM) for time diff calculations
+    # julianday('now') - julianday(col) gives days difference
+    sql = re.sub(
+        r"julianday\('now'\)\s*-\s*julianday\(([^)]+)\)",
+        r"EXTRACT(EPOCH FROM (NOW() - \1)) / 86400.0",
+        sql,
+    )
+    # Standalone julianday('now') → EXTRACT(EPOCH FROM NOW()) / 86400
+    sql = sql.replace("julianday('now')", "(EXTRACT(EPOCH FROM NOW()) / 86400.0)")
     # Remove SQLite PRAGMAs
     lines = sql.split('\n')
     lines = [l for l in lines if not l.strip().startswith('PRAGMA')]
