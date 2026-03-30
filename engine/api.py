@@ -372,6 +372,17 @@ baseline_cache = TTLCache(default_ttl=300)
 @app.post("/api/simulate")
 def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(None)):
     """Run Monte Carlo simulation with events."""
+    # Check Redis cache first
+    try:
+        from cache import get_cached_simulation, cache_simulation as store_in_cache
+        events_for_cache = [{"id": e.id, "params": e.params, "probability": e.probability} for e in req.events]
+        cached = get_cached_simulation(req.ticker.upper(), events_for_cache, req.horizon_days, req.n_simulations)
+        if cached:
+            cached["cached"] = True
+            return cached
+    except Exception:
+        cached = None
+
     try:
         increment_sim_counter()
     except Exception:
@@ -462,7 +473,7 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
     except Exception:
         pass  # Graceful degradation
 
-    return SimulateResponse(
+    response = SimulateResponse(
         ticker=result.ticker,
         current_price=result.current_price,
         horizon_days=result.horizon_days,
@@ -484,6 +495,15 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
         stock_betas=stock_betas_data,
         stock_impact_breakdown=stock_impact_breakdown_data,
     )
+
+    # Store in Redis cache (5 min TTL)
+    try:
+        events_for_cache = [{"id": e.id, "params": e.params, "probability": e.probability} for e in req.events]
+        store_in_cache(req.ticker.upper(), events_for_cache, req.horizon_days, n_sim, response.dict(), ttl=300)
+    except Exception:
+        pass  # Never fail response for cache
+
+    return response
 
 
 @app.get("/api/categories")
@@ -1430,6 +1450,16 @@ def check_pine_limit(overlay_count: int = 0, authorization: Optional[str] = Head
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/cache/stats")
+def cache_stats():
+    """Return Redis cache statistics."""
+    try:
+        from cache import get_cache_stats
+        return get_cache_stats()
+    except Exception:
+        return {"available": False, "error": "Cache module not loaded"}
 
 
 @app.get("/api/llm/stats")
