@@ -1681,6 +1681,170 @@ def marketplace_creator_public(creator_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Marketplace File Upload / Download Endpoints
+# ---------------------------------------------------------------------------
+
+from fastapi import UploadFile, File
+from fastapi.responses import FileResponse
+import file_scanner
+
+
+@app.post("/api/marketplace/listings/{listing_id}/upload")
+async def marketplace_upload_file(
+    listing_id: str,
+    file: UploadFile = File(...),
+    is_primary: bool = True,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Upload a product file with security scanning.
+    
+    Files are scanned for malicious code before being accepted.
+    Rejected files return scan details explaining why.
+    """
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    
+    # Read file content
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+    
+    filename = file.filename or "unnamed"
+    
+    try:
+        result = marketplace.upload_product_file(
+            listing_id=listing_id,
+            uploader_id=user["user_id"],
+            filename=filename,
+            content=content,
+            is_primary=is_primary,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    
+    if result.get("rejected"):
+        return {
+            "status": "rejected",
+            "reason": result["reason"],
+            "scan": result["scan"],
+            "disclaimer": result["disclaimer"],
+        }
+    
+    return {
+        "status": "accepted",
+        "file_id": result["file_id"],
+        "filename": result["filename"],
+        "file_size": result["file_size"],
+        "file_hash": result["file_hash"],
+        "scan": result["scan"],
+        "disclaimer": result["disclaimer"],
+    }
+
+
+@app.get("/api/marketplace/listings/{listing_id}/files")
+def marketplace_listing_files(listing_id: str):
+    """Get all files for a listing."""
+    files = marketplace.get_listing_files(listing_id)
+    return {"files": files}
+
+
+@app.get("/api/marketplace/files/{file_id}/download")
+def marketplace_download_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Download a product file.
+    
+    Requires purchase for paid listings. Includes liability disclaimer.
+    """
+    user_id = None
+    if authorization:
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        import auth
+        user = auth.get_user_by_token(token)
+        if user:
+            user_id = user["user_id"]
+    
+    result = marketplace.get_file_for_download(file_id, user_id)
+    if not result:
+        raise HTTPException(404, "File not found")
+    
+    if "error" in result:
+        raise HTTPException(403, result["error"])
+    
+    if not os.path.exists(result["file_path"]):
+        raise HTTPException(404, "File not found on disk")
+    
+    return FileResponse(
+        path=result["file_path"],
+        filename=result["original_filename"],
+        headers={
+            "X-MonteCarloo-Disclaimer": "User-generated content. Use at your own risk. See /api/marketplace/disclaimer for full terms.",
+            "X-Risk-Level": result["risk_level"],
+            "X-Scan-Status": result["scan_status"],
+        },
+    )
+
+
+@app.delete("/api/marketplace/files/{file_id}")
+def marketplace_delete_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Delete a product file (creator only)."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    
+    deleted = marketplace.delete_product_file(file_id, user["user_id"])
+    if not deleted:
+        raise HTTPException(403, "Not authorized or file not found")
+    return {"deleted": True}
+
+
+@app.post("/api/marketplace/files/{file_id}/rescan")
+def marketplace_rescan_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Re-scan a file for malicious content (creator or admin)."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    
+    result = marketplace.rescan_file(file_id)
+    if not result:
+        raise HTTPException(404, "File not found")
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+    return {"scan": result}
+
+
+@app.get("/api/marketplace/disclaimer")
+def marketplace_disclaimer():
+    """Get the full product disclaimer and creator upload terms."""
+    return {
+        "product_disclaimer": file_scanner.PRODUCT_DISCLAIMER,
+        "creator_upload_terms": file_scanner.CREATOR_UPLOAD_TERMS,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Pyeces Bridge Endpoints (v7.2)
 # ---------------------------------------------------------------------------
 

@@ -2,7 +2,8 @@
 MonteCarloo Marketplace — AI Personality & Skills Store
 "Etsy for Financial AI"
 
-Handles: listings, search, reviews, purchases, creator profiles, payouts.
+Handles: listings, search, reviews, purchases, creator profiles, payouts,
+         file uploads with malicious code scanning.
 """
 
 import os
@@ -11,9 +12,14 @@ import hashlib
 import secrets
 import time
 import json
+import logging
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from dataclasses import dataclass
+
+import file_scanner
+
+logger = logging.getLogger(__name__)
 
 # Use same persistent data directory as main DB
 _DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -22,6 +28,10 @@ if not os.path.isdir(_DATA_DIR):
 DB_PATH = os.environ.get("MONTECARLOO_DB", os.path.join(_DATA_DIR, "montecarloo.db"))
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY", "")
 PLATFORM_COMMISSION = 0.30  # 30% platform take
+
+# File uploads
+UPLOAD_DIR = os.path.join(_DATA_DIR, "marketplace_uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---------- DB Setup ----------
 
@@ -108,12 +118,32 @@ def init_marketplace_db():
             updated_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS marketplace_files (
+            id TEXT PRIMARY KEY,
+            listing_id TEXT NOT NULL,
+            uploader_id TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            file_hash TEXT NOT NULL DEFAULT '',
+            mime_type TEXT DEFAULT '',
+            scan_status TEXT DEFAULT 'pending',
+            scan_result TEXT DEFAULT '{}',
+            risk_level TEXT DEFAULT 'unknown',
+            download_count INTEGER DEFAULT 0,
+            is_primary INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_listings_creator ON marketplace_listings(creator_id);
         CREATE INDEX IF NOT EXISTS idx_listings_type ON marketplace_listings(type);
         CREATE INDEX IF NOT EXISTS idx_listings_status ON marketplace_listings(status);
         CREATE INDEX IF NOT EXISTS idx_reviews_listing ON marketplace_reviews(listing_id);
         CREATE INDEX IF NOT EXISTS idx_purchases_buyer ON marketplace_purchases(buyer_id);
         CREATE INDEX IF NOT EXISTS idx_purchases_listing ON marketplace_purchases(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_files_listing ON marketplace_files(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_files_uploader ON marketplace_files(uploader_id);
     """)
     conn.commit()
     conn.close()
@@ -738,6 +768,234 @@ def get_creator_public_profile(user_id: str) -> Optional[dict]:
         "listings": [_row_to_listing(l) for l in listings],
         "created_at": profile["created_at"],
     }
+
+
+# ---------- File Uploads ----------
+
+def upload_product_file(
+    listing_id: str,
+    uploader_id: str,
+    filename: str,
+    content: bytes,
+    is_primary: bool = False,
+) -> dict:
+    """
+    Upload a product file with security scanning.
+    
+    Returns dict with file info and scan results.
+    Rejects files that fail the security scan.
+    """
+    # Verify listing exists and uploader owns it
+    conn = _db()
+    listing = conn.execute(
+        "SELECT creator_id FROM marketplace_listings WHERE id = ?", (listing_id,)
+    ).fetchone()
+    if not listing:
+        conn.close()
+        raise ValueError("Listing not found")
+    if listing["creator_id"] != uploader_id:
+        conn.close()
+        raise ValueError("Only the listing creator can upload files")
+    
+    # Run security scan
+    scan_result = file_scanner.scan_file(filename, content)
+    
+    if not scan_result.safe:
+        conn.close()
+        return {
+            "uploaded": False,
+            "rejected": True,
+            "reason": "File failed security scan",
+            "scan": scan_result.to_dict(),
+            "disclaimer": file_scanner.CREATOR_UPLOAD_TERMS,
+        }
+    
+    # Store the file
+    file_id = _gen_id()
+    ext = os.path.splitext(filename)[1].lower()
+    stored_name = f"{file_id}{ext}"
+    
+    # Create listing subdirectory
+    listing_dir = os.path.join(UPLOAD_DIR, listing_id)
+    os.makedirs(listing_dir, exist_ok=True)
+    
+    file_path = os.path.join(listing_dir, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # If this is the primary file, unmark any existing primary
+    if is_primary:
+        conn.execute(
+            "UPDATE marketplace_files SET is_primary = 0 WHERE listing_id = ?",
+            (listing_id,)
+        )
+    
+    conn.execute("""
+        INSERT INTO marketplace_files
+        (id, listing_id, uploader_id, original_filename, stored_filename,
+         file_size, file_hash, scan_status, scan_result, risk_level, is_primary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        file_id, listing_id, uploader_id, filename, stored_name,
+        scan_result.file_size, scan_result.file_hash,
+        "passed", json.dumps(scan_result.to_dict()),
+        scan_result.risk_level, 1 if is_primary else 0,
+    ))
+    
+    # Update listing with download URL and file size
+    if is_primary:
+        conn.execute("""
+            UPDATE marketplace_listings 
+            SET download_url = ?, file_size_bytes = ?, updated_at = datetime('now')
+            WHERE id = ?
+        """, (f"/api/marketplace/files/{file_id}/download", scan_result.file_size, listing_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "uploaded": True,
+        "rejected": False,
+        "file_id": file_id,
+        "filename": filename,
+        "file_size": scan_result.file_size,
+        "file_hash": scan_result.file_hash,
+        "scan": scan_result.to_dict(),
+        "is_primary": is_primary,
+        "disclaimer": file_scanner.CREATOR_UPLOAD_TERMS,
+    }
+
+
+def get_listing_files(listing_id: str) -> list:
+    """Get all files for a listing."""
+    conn = _db()
+    rows = conn.execute("""
+        SELECT id, original_filename, file_size, file_hash, risk_level,
+               scan_status, download_count, is_primary, created_at
+        FROM marketplace_files
+        WHERE listing_id = ?
+        ORDER BY is_primary DESC, created_at ASC
+    """, (listing_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_file_for_download(file_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+    """
+    Get file path for download. Checks purchase status if listing is paid.
+    Returns file info including disk path, or None.
+    """
+    conn = _db()
+    row = conn.execute("""
+        SELECT f.*, l.price_cents, l.creator_id, l.status as listing_status
+        FROM marketplace_files f
+        JOIN marketplace_listings l ON f.listing_id = l.id
+        WHERE f.id = ?
+    """, (file_id,)).fetchone()
+    
+    if not row:
+        conn.close()
+        return None
+    
+    # If listing is paid and user hasn't purchased, block download
+    if row["price_cents"] > 0 and user_id:
+        if user_id != row["creator_id"]:  # Creators can always download their own
+            purchased = conn.execute(
+                "SELECT id FROM marketplace_purchases WHERE listing_id = ? AND buyer_id = ? AND status = 'completed'",
+                (row["listing_id"], user_id)
+            ).fetchone()
+            if not purchased:
+                conn.close()
+                return {"error": "Purchase required", "listing_id": row["listing_id"]}
+    elif row["price_cents"] > 0 and not user_id:
+        conn.close()
+        return {"error": "Login and purchase required", "listing_id": row["listing_id"]}
+    
+    # Increment download counter
+    conn.execute(
+        "UPDATE marketplace_files SET download_count = download_count + 1 WHERE id = ?",
+        (file_id,)
+    )
+    conn.commit()
+    
+    file_path = os.path.join(UPLOAD_DIR, row["listing_id"], row["stored_filename"])
+    conn.close()
+    
+    return {
+        "file_path": file_path,
+        "original_filename": row["original_filename"],
+        "file_size": row["file_size"],
+        "risk_level": row["risk_level"],
+        "scan_status": row["scan_status"],
+        "disclaimer": file_scanner.PRODUCT_DISCLAIMER,
+    }
+
+
+def delete_product_file(file_id: str, user_id: str) -> bool:
+    """Delete a product file (creator only)."""
+    conn = _db()
+    row = conn.execute("""
+        SELECT f.listing_id, f.stored_filename, l.creator_id
+        FROM marketplace_files f
+        JOIN marketplace_listings l ON f.listing_id = l.id
+        WHERE f.id = ?
+    """, (file_id,)).fetchone()
+    
+    if not row or row["creator_id"] != user_id:
+        conn.close()
+        return False
+    
+    # Delete from disk
+    file_path = os.path.join(UPLOAD_DIR, row["listing_id"], row["stored_filename"])
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        logger.error(f"Failed to delete file from disk: {e}")
+    
+    # Delete from DB
+    conn.execute("DELETE FROM marketplace_files WHERE id = ?", (file_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def rescan_file(file_id: str) -> Optional[dict]:
+    """Re-scan an existing file (admin/moderation use)."""
+    conn = _db()
+    row = conn.execute(
+        "SELECT listing_id, stored_filename, original_filename FROM marketplace_files WHERE id = ?",
+        (file_id,)
+    ).fetchone()
+    
+    if not row:
+        conn.close()
+        return None
+    
+    file_path = os.path.join(UPLOAD_DIR, row["listing_id"], row["stored_filename"])
+    if not os.path.exists(file_path):
+        conn.close()
+        return {"error": "File not found on disk"}
+    
+    with open(file_path, "rb") as f:
+        content = f.read()
+    
+    scan_result = file_scanner.scan_file(row["original_filename"], content)
+    
+    conn.execute("""
+        UPDATE marketplace_files 
+        SET scan_status = ?, scan_result = ?, risk_level = ?
+        WHERE id = ?
+    """, (
+        "passed" if scan_result.safe else "failed",
+        json.dumps(scan_result.to_dict()),
+        scan_result.risk_level,
+        file_id,
+    ))
+    conn.commit()
+    conn.close()
+    
+    return scan_result.to_dict()
 
 
 # ---------- Seed Data ----------
