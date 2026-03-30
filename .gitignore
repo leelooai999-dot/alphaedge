@@ -15,3 +15,4 @@ __pycache__/
 build-monitor-state.json
 frontend/.env.vercel
 frontend/.last-deployment-state
+.vercel
