@@ -125,6 +125,12 @@ export default function Navbar() {
               Explore
             </Link>
             <Link
+              href="/debate"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              🎭 Debate
+            </Link>
+            <Link
               href="/marketplace"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
@@ -235,6 +241,13 @@ export default function Navbar() {
               onClick={() => setOpen(false)}
             >
               Explore
+            </Link>
+            <Link
+              href="/debate"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              🎭 Debate
             </Link>
             <Link
               href="/marketplace"
