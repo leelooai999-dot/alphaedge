@@ -165,6 +165,9 @@ def _sqlite_to_postgres(sql):
     )
     # Standalone julianday('now') → EXTRACT(EPOCH FROM NOW()) / 86400
     sql = sql.replace("julianday('now')", "(EXTRACT(EPOCH FROM NOW()) / 86400.0)")
+    # SQLite MAX(scalar, scalar) → Postgres GREATEST(scalar, scalar) for non-aggregate MAX
+    # Match MAX(literal, expr) pattern where first arg is a number literal
+    sql = re.sub(r'\bMAX\((\d+\.?\d*),\s*\(', r'GREATEST(\1, (', sql)
     # Remove SQLite PRAGMAs
     lines = sql.split('\n')
     lines = [l for l in lines if not l.strip().startswith('PRAGMA')]
