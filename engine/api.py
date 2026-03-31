@@ -606,6 +606,60 @@ def get_scenario_stats():
     return get_global_stats()
 
 
+@app.post("/api/scenarios/refresh-prices")
+def refresh_scenario_prices():
+    """Refresh all seed scenario prices with live market data. Called by cron."""
+    from simulation import get_current_price, simulate
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT id, ticker, events, result_summary FROM scenarios").fetchall()
+        updated = 0
+        for row in rows:
+            ticker = row["ticker"]
+            try:
+                live_price = get_current_price(ticker)
+                if live_price <= 0:
+                    continue
+                result_summary = json.loads(row["result_summary"]) if row["result_summary"] else {}
+                events_raw = json.loads(row["events"]) if row["events"] else []
+
+                # Update currentPrice
+                result_summary["currentPrice"] = round(live_price, 2)
+
+                # Re-run quick simulation for median30d
+                if events_raw:
+                    sim_events = []
+                    for e in events_raw:
+                        sim_events.append({
+                            "id": e.get("id", ""),
+                            "probability": e.get("probability", 50) / 100.0,
+                            "params": {
+                                "severity": abs(e.get("impact", 5)),
+                                "duration_days": e.get("duration", 30),
+                            },
+                        })
+                    try:
+                        sim = simulate(ticker, sim_events, horizon_days=30, n_simulations=200, seed=42,
+                                       cached_price=live_price)
+                        result_summary["median30d"] = round(sim.median_target, 2)
+                        result_summary["probProfit"] = round(sim.probability_above_current * 100, 0)
+                        result_summary["eventImpact"] = round(sim.expected_return_pct, 1)
+                    except Exception:
+                        pass
+
+                conn.execute(
+                    "UPDATE scenarios SET result_summary = ? WHERE id = ?",
+                    (json.dumps(result_summary), row["id"]),
+                )
+                updated += 1
+            except Exception:
+                continue
+        conn.commit()
+        return {"updated": updated, "total": len(rows)}
+    finally:
+        conn.close()
+
+
 @app.get("/api/scenarios/{scenario_id}")
 def get_scenario(scenario_id: str):
     """Get a scenario by ID (increments views)."""
@@ -1136,6 +1190,21 @@ def get_referral_info(user_id: str):
 
 
 # --- OG Image Endpoint ---
+
+@app.get("/api/og/home")
+def get_og_home():
+    """Generate Open Graph image for the homepage."""
+    from fastapi.responses import Response
+    svg = f"""<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1200" height="630" fill="#0a0f1a"/>
+      <text x="600" y="220" text-anchor="middle" fill="#00d4aa" font-size="72" font-weight="800" font-family="Inter,system-ui,sans-serif">MonteCarloo</text>
+      <text x="600" y="310" text-anchor="middle" fill="#ffffff" font-size="36" font-weight="600" font-family="Inter,system-ui,sans-serif">What if the world changes?</text>
+      <text x="600" y="370" text-anchor="middle" fill="#8b95a5" font-size="24" font-family="Inter,system-ui,sans-serif">Simulate how events impact your stocks</text>
+      <text x="600" y="440" text-anchor="middle" fill="#00d4aa" font-size="20" font-family="Inter,system-ui,sans-serif">Polymarket × Monte Carlo × AI Debates</text>
+      <text x="600" y="560" text-anchor="middle" fill="#4a5568" font-size="16" font-family="Inter,system-ui,sans-serif">montecarloo.com</text>
+    </svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
+
 
 @app.get("/api/og/{scenario_id}")
 def get_og_image(scenario_id: str):

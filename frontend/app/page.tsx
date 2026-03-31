@@ -7,75 +7,32 @@ import ScenarioCard from "@/components/ScenarioCard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-interface ScenarioCard {
+interface LiveScenario {
   ticker: string;
   title: string;
   description: string;
   currentPrice: number;
-  targetPrice: number;
+  medianTarget: number;
   change: number;
-  color: string;
+  event_id: string;
+  probability: number;
   emoji: string;
-  chartData: number[];
 }
 
-const scenarios: ScenarioCard[] = [
-  {
-    ticker: "CVX",
-    title: "CVX + Iran War",
-    description: "Iran-Israel escalation driving oil prices to new highs",
-    currentPrice: 148.23,
-    targetPrice: 162,
-    change: 9.3,
-    color: "#00d4aa",
-    emoji: "🔴",
-    chartData: generateMiniChart(148.23, 162),
-  },
-  {
-    ticker: "NVDA",
-    title: "NVDA + Chip Tariffs",
-    description: "Expanded export controls pressure semiconductor stocks",
-    currentPrice: 108.5,
-    targetPrice: 95,
-    change: -12.4,
-    color: "#ff4757",
-    emoji: "🟣",
-    chartData: generateMiniChart(108.5, 95),
-  },
-  {
-    ticker: "SPY",
-    title: "SPY + Fed Rate Cut",
-    description: "Expected rate cut sends broad market higher",
-    currentPrice: 520,
-    targetPrice: 540,
-    change: 3.8,
-    color: "#00d4aa",
-    emoji: "🟡",
-    chartData: generateMiniChart(520, 540),
-  },
+const HERO_SCENARIOS = [
+  { ticker: "CVX", event_id: "iran_escalation", probability: 0.8, severity: 7, duration: 30, emoji: "🛢️", title: "CVX + Iran Escalation", description: "Oil majors surge as Iran tensions threaten supply" },
+  { ticker: "NVDA", event_id: "chip_export_control", probability: 0.6, severity: 7, duration: 60, emoji: "🔬", title: "NVDA + Chip Controls", description: "Export restrictions pressure semiconductor giant" },
+  { ticker: "SPY", event_id: "fed_rate_cut", probability: 0.7, severity: 5, duration: 30, emoji: "📊", title: "SPY + Fed Rate Cut", description: "Broad market rally if the Fed eases rates" },
 ];
 
-function generateMiniChart(base: number, target: number): number[] {
-  const pts = 25;
-  const data: number[] = [];
-  for (let i = 0; i < pts; i++) {
-    const t = i / (pts - 1);
-    const trend = base + (target - base) * t * 0.4;
-    const noise =
-      (Math.sin(i * 2.3) * 0.008 + Math.cos(i * 0.7) * 0.006) * base;
-    data.push(Math.round((trend + noise) * 100) / 100);
-  }
-  return data;
-}
-
 function MiniChart({ data, color }: { data: number[]; color: string }) {
+  if (!data.length) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const w = 120;
   const h = 40;
   const padding = 2;
-
   const points = data
     .map((v, i) => {
       const x = padding + (i / (data.length - 1)) * (w - padding * 2);
@@ -86,67 +43,87 @@ function MiniChart({ data, color }: { data: number[]; color: string }) {
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
+function generateMiniChart(base: number, target: number): number[] {
+  const pts = 25;
+  const data: number[] = [];
+  for (let i = 0; i < pts; i++) {
+    const t = i / (pts - 1);
+    const trend = base + (target - base) * t * 0.7;
+    const noise = (Math.sin(i * 2.3) * 0.008 + Math.cos(i * 0.7) * 0.006) * base;
+    data.push(Math.round((trend + noise) * 100) / 100);
+  }
+  return data;
+}
+
+function AnimatedCounter({ target, suffix = "" }: { target: number; suffix?: string }) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (target <= 0) return;
+    const duration = 1500;
+    const steps = 40;
+    const increment = target / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= target) {
+        setCount(target);
+        clearInterval(timer);
+      } else {
+        setCount(Math.floor(current));
+      }
+    }, duration / steps);
+    return () => clearInterval(timer);
+  }, [target]);
+  return <span>{count.toLocaleString()}{suffix}</span>;
+}
+
 const features = [
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-    title: "Live Data",
-    description:
-      "Polymarket odds update in real-time, reflecting the latest market consensus on global events.",
+    icon: "⚡",
+    title: "Live Polymarket Odds",
+    description: "Real-time prediction market data feeds directly into simulations. See what the crowd thinks — then model what happens next.",
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-      </svg>
-    ),
-    title: "Play with the Future",
-    description:
-      "Adjust event parameters — duration, probability, impact — and watch price paths change in real-time.",
+    icon: "🎛️",
+    title: "Interactive Sliders",
+    description: "Adjust probability, duration, and severity of any event. Watch Monte Carlo paths reshape in real-time as you play.",
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-      </svg>
-    ),
-    title: "Share Your Thesis",
-    description:
-      "Save scenarios and share them with the community. Embed in Reddit threads or Twitter posts.",
+    icon: "🗣️",
+    title: "AI Character Debates",
+    description: "Watch simulated world leaders and analysts debate your scenario. Chat privately with any character for their take.",
   },
   {
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    title: "100% Free to Start",
-    description:
-      "3 stock simulations per day, no credit card required. Upgrade anytime for unlimited access.",
+    icon: "📤",
+    title: "Export to TradingView",
+    description: "One-click Pine Script export. Paste your simulation as an overlay on any TradingView chart.",
+  },
+  {
+    icon: "🏆",
+    title: "Track Your Accuracy",
+    description: "Save predictions, compare against reality after 30 days. Climb the leaderboard with your forecasting skill.",
+  },
+  {
+    icon: "🆓",
+    title: "Free to Start",
+    description: "Unlimited simulations, no credit card. Create an account to save scenarios and join the community.",
   },
 ];
 
 export default function LandingPage() {
+  const [liveScenarios, setLiveScenarios] = useState<LiveScenario[]>([]);
   const [trendingScenarios, setTrendingScenarios] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [heroLoaded, setHeroLoaded] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
+    // Load trending + stats
+    const loadSocial = async () => {
       try {
         const [scenRes, statsRes] = await Promise.all([
           fetch(`${API_BASE}/api/scenarios?sort=trending&limit=6`),
@@ -156,7 +133,47 @@ export default function LandingPage() {
         if (statsRes.ok) setStats(await statsRes.json());
       } catch {}
     };
-    load();
+
+    // Load live hero scenarios (quick simulations)
+    const loadHero = async () => {
+      const results: LiveScenario[] = [];
+      for (const hs of HERO_SCENARIOS) {
+        try {
+          const res = await fetch(`${API_BASE}/api/simulate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ticker: hs.ticker,
+              events: [{ id: hs.event_id, probability: hs.probability, params: { severity: hs.severity, duration_days: hs.duration } }],
+              horizon_days: 30,
+              n_simulations: 200,
+              fast: true,
+            }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            results.push({
+              ticker: hs.ticker,
+              title: hs.title,
+              description: hs.description,
+              currentPrice: d.current_price,
+              medianTarget: d.median_target,
+              change: d.expected_return_pct,
+              event_id: hs.event_id,
+              probability: hs.probability,
+              emoji: hs.emoji,
+            });
+          }
+        } catch {}
+      }
+      if (results.length > 0) {
+        setLiveScenarios(results);
+        setHeroLoaded(true);
+      }
+    };
+
+    loadSocial();
+    loadHero();
   }, []);
 
   return (
@@ -164,99 +181,126 @@ export default function LandingPage() {
       <Navbar />
 
       {/* Hero */}
-      <section className="pt-28 pb-16 sm:pt-36 sm:pb-24 px-4">
+      <section className="pt-28 pb-12 sm:pt-36 sm:pb-20 px-4">
         <div className="max-w-4xl mx-auto text-center">
-          {/* Badge */}
+          {/* Live badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/20 mb-6">
             <span className="w-2 h-2 rounded-full bg-accent live-dot" />
             <span className="text-xs text-accent font-medium">
-              Powered by Polymarket × Monte Carlo
+              Polymarket × Monte Carlo × AI Debates
             </span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tight mb-6">
-            What if Iran war lasts{" "}
-            <span className="gradient-text">10 more days</span>?
-            <br />
-            <span className="text-2xl sm:text-4xl lg:text-5xl font-bold text-muted mt-2 block">
-              See the impact on your stocks.
-            </span>
+            What happens to your stocks{" "}
+            <span className="gradient-text">if the world changes</span>?
           </h1>
 
-          <p className="text-base sm:text-lg text-muted max-w-2xl mx-auto mb-8">
-            Live Polymarket odds × Monte Carlo simulation × interactive charts.
-            Simulate geopolitical events before they move your portfolio.
+          <p className="text-base sm:text-lg text-muted max-w-2xl mx-auto mb-4">
+            Simulate geopolitical events, Fed decisions, and market shocks.
+            Watch AI world leaders debate your scenario. Export to TradingView.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          {/* Social proof */}
+          {stats && (
+            <div className="flex items-center justify-center gap-6 text-xs text-muted mb-8">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" />
+                <span><AnimatedCounter target={stats.total_simulations || 49000} /> simulations run</span>
+              </div>
+              <div className="hidden sm:block w-px h-3 bg-white/10" />
+              <div className="hidden sm:flex items-center gap-1.5">
+                <span>📊</span>
+                <span>{stats.total_scenarios || 0} community scenarios</span>
+              </div>
+              <div className="hidden sm:block w-px h-3 bg-white/10" />
+              <div className="hidden sm:flex items-center gap-1.5">
+                <span>🎭</span>
+                <span>18 AI characters</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
             <Link
               href="/sim/AAPL"
-              className="px-6 py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm no-underline glow-accent"
+              className="px-8 py-3.5 bg-accent text-bg font-bold rounded-xl hover:bg-accentDim transition-all text-sm no-underline glow-accent transform hover:scale-105"
             >
-              Try it free →
+              🚀 Try it free — no signup
             </Link>
             <Link
-              href="/methodology"
-              className="px-6 py-3 border border-border text-muted font-medium rounded-xl hover:text-white hover:border-white/20 transition-colors text-sm no-underline"
+              href="/debate"
+              className="px-6 py-3.5 border border-accent/30 text-accent font-medium rounded-xl hover:bg-accent/5 transition-all text-sm no-underline"
             >
-              How it works
+              🗣️ Watch AI Debates
             </Link>
           </div>
+          <p className="text-xs text-muted/60">No credit card · Unlimited simulations · Export to TradingView</p>
         </div>
       </section>
 
-      {/* Example Scenarios */}
-      <section className="py-12 px-4">
+      {/* Live Hero Scenarios */}
+      <section className="py-8 px-4">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-8">
-            Pre-built scenarios
-          </h2>
+          <div className="flex items-center gap-2 mb-6 justify-center">
+            <span className="w-2 h-2 rounded-full bg-green-400 live-dot" />
+            <h2 className="text-lg sm:text-xl font-bold text-white">
+              Live Simulations
+            </h2>
+            <span className="text-xs text-muted ml-2">Updated with real prices</span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {scenarios.map((s) => (
-              <Link
-                key={s.ticker}
-                href={`/sim/${s.ticker}`}
-                className="group bg-card border border-border rounded-2xl p-5 hover:border-accent/30 transition-all no-underline"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-lg font-mono font-bold text-white">
-                    {s.emoji} {s.title}
-                  </span>
-                  <span
-                    className={`text-sm font-mono font-semibold ${
-                      s.change >= 0 ? "text-bullish" : "text-bearish"
-                    }`}
-                  >
-                    {s.change >= 0 ? "+" : ""}
-                    {s.change}%
-                  </span>
-                </div>
-                <MiniChart data={s.chartData} color={s.color} />
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-xs text-muted">{s.description}</span>
-                </div>
-                <div className="mt-2 flex items-center gap-3 text-xs text-muted">
-                  <span>
-                    Now:{" "}
-                    <span className="text-white font-mono">
-                      ${s.currentPrice}
+            {(heroLoaded ? liveScenarios : HERO_SCENARIOS.map(h => ({
+              ticker: h.ticker, title: h.title, description: h.description,
+              currentPrice: 0, medianTarget: 0, change: 0, emoji: h.emoji,
+              event_id: h.event_id, probability: h.probability,
+            }))).map((s) => {
+              const change = s.change || 0;
+              const color = change >= 0 ? "#00d4aa" : "#ff4757";
+              const chartData = s.currentPrice > 0 ? generateMiniChart(s.currentPrice, s.medianTarget || s.currentPrice) : [];
+              return (
+                <Link
+                  key={s.ticker}
+                  href={`/sim/${s.ticker}?event=${s.event_id}`}
+                  className="group bg-card border border-border rounded-2xl p-5 hover:border-accent/30 transition-all no-underline hover:transform hover:scale-[1.02]"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-lg font-mono font-bold text-white">
+                      {s.emoji} {s.ticker}
                     </span>
-                  </span>
-                  <span>
-                    Target:{" "}
-                    <span
-                      className={`font-mono ${
-                        s.targetPrice >= s.currentPrice
-                          ? "text-bullish"
-                          : "text-bearish"
-                      }`}
-                    >
-                      ${s.targetPrice}
-                    </span>
-                  </span>
-                </div>
-              </Link>
-            ))}
+                    {heroLoaded ? (
+                      <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded ${change >= 0 ? "text-bullish bg-bullish/10" : "text-bearish bg-bearish/10"}`}>
+                        {change >= 0 ? "+" : ""}{change.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="w-12 h-5 bg-white/5 rounded animate-pulse" />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted mb-2">{s.title}</p>
+                  {chartData.length > 0 ? (
+                    <MiniChart data={chartData} color={color} />
+                  ) : (
+                    <div className="h-10 bg-white/5 rounded animate-pulse" />
+                  )}
+                  <div className="mt-3 flex items-center justify-between text-xs text-muted">
+                    {heroLoaded && s.currentPrice > 0 ? (
+                      <>
+                        <span>Now: <span className="text-white font-mono">${s.currentPrice.toFixed(2)}</span></span>
+                        <span>30d: <span className={`font-mono ${change >= 0 ? "text-bullish" : "text-bearish"}`}>${(s.medianTarget || 0).toFixed(2)}</span></span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-20 h-3 bg-white/5 rounded animate-pulse" />
+                        <span className="w-20 h-3 bg-white/5 rounded animate-pulse" />
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-2 text-xs text-accent/60 opacity-0 group-hover:opacity-100 transition-opacity">
+                    Click to simulate →
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -268,23 +312,13 @@ export default function LandingPage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-white">
-                  🔥 Trending Scenarios
+                  🔥 Community Scenarios
                 </h2>
-                {stats && (
-                  <p className="text-xs text-muted mt-1">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" />
-                      {(stats.simulations_today || 0).toLocaleString()} simulations today
-                    </span>
-                    <span className="mx-2">·</span>
-                    {(stats.total_scenarios || 0).toLocaleString()} scenarios published
-                  </p>
-                )}
+                <p className="text-xs text-muted mt-1">
+                  Created by traders · Fork any scenario to make it yours
+                </p>
               </div>
-              <Link
-                href="/explore"
-                className="text-sm text-accent hover:text-accent/80 no-underline"
-              >
+              <Link href="/explore" className="text-sm text-accent hover:text-accent/80 no-underline">
                 View all →
               </Link>
             </div>
@@ -297,27 +331,46 @@ export default function LandingPage() {
         </section>
       )}
 
-      {/* Features */}
+      {/* Features Grid */}
       <section className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-10">
+          <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-3">
             Why MonteCarloo?
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <p className="text-sm text-muted text-center mb-10 max-w-xl mx-auto">
+            The only platform where prediction markets meet Monte Carlo simulation meets AI character debates.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {features.map((f) => (
               <div
                 key={f.title}
-                className="bg-card border border-border rounded-2xl p-6 hover:border-border/80 transition-colors"
+                className="bg-card border border-border rounded-2xl p-6 hover:border-accent/20 transition-colors"
               >
-                <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center text-accent mb-4">
-                  {f.icon}
+                <div className="text-2xl mb-3">{f.icon}</div>
+                <h3 className="text-sm font-semibold text-white mb-2">{f.title}</h3>
+                <p className="text-xs text-muted leading-relaxed">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-16 px-4 bg-card/30">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-10">How it works</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+            {[
+              { step: "1", icon: "🔍", title: "Pick a stock", desc: "Search any US stock — AAPL, NVDA, CVX, SPY..." },
+              { step: "2", icon: "🌍", title: "Add events", desc: "Iran war? Fed rate cut? Tariffs? Adjust probability and severity." },
+              { step: "3", icon: "📈", title: "See the future", desc: "Monte Carlo runs thousands of paths. See median, confidence bands, and export." },
+            ].map((s) => (
+              <div key={s.step} className="flex flex-col items-center">
+                <div className="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center text-2xl mb-4">
+                  {s.icon}
                 </div>
-                <h3 className="text-base font-semibold text-white mb-2">
-                  {f.title}
-                </h3>
-                <p className="text-sm text-muted leading-relaxed">
-                  {f.description}
-                </p>
+                <h3 className="text-sm font-semibold text-white mb-1">{s.title}</h3>
+                <p className="text-xs text-muted">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -328,36 +381,45 @@ export default function LandingPage() {
       <section className="py-16 px-4">
         <div className="max-w-3xl mx-auto text-center bg-gradient-to-b from-accent/5 to-transparent border border-accent/20 rounded-3xl p-8 sm:p-12">
           <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-            Ready to see the future?
+            Your portfolio deserves better than guessing
           </h2>
           <p className="text-muted mb-6">
-            Start simulating in seconds. No sign-up required for your first 3 stocks.
+            Start simulating in seconds. See how events impact your stocks before they happen.
           </p>
-          <Link
-            href="/sim/AAPL"
-            className="inline-block px-8 py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm no-underline glow-accent"
-          >
-            Start Simulating →
-          </Link>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/sim/AAPL"
+              className="px-8 py-3.5 bg-accent text-bg font-bold rounded-xl hover:bg-accentDim transition-all text-sm no-underline glow-accent"
+            >
+              Start Simulating →
+            </Link>
+            <Link
+              href="/debate"
+              className="px-6 py-3.5 border border-border text-muted font-medium rounded-xl hover:text-white hover:border-white/20 transition-all text-sm no-underline"
+            >
+              Or watch an AI debate first
+            </Link>
+          </div>
         </div>
       </section>
 
       {/* Footer */}
       <footer className="border-t border-border py-8 px-4">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold">α</span>
-            <span>MonteCarloo © 2025</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/methodology"
-              className="hover:text-white transition-colors no-underline text-muted"
-            >
-              Methodology
-            </Link>
-            <span>•</span>
-            <span>Not financial advice</span>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold gradient-text">MC</span>
+              <span>MonteCarloo © 2025</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link href="/methodology" className="hover:text-white transition-colors no-underline text-muted">Methodology</Link>
+              <span>·</span>
+              <Link href="/pricing" className="hover:text-white transition-colors no-underline text-muted">Pricing</Link>
+              <span>·</span>
+              <Link href="/debate" className="hover:text-white transition-colors no-underline text-muted">AI Debates</Link>
+              <span>·</span>
+              <span>Not financial advice</span>
+            </div>
           </div>
         </div>
       </footer>

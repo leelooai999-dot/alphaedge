@@ -2,14 +2,37 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MonteCarloo — What-if Stock Event Simulator",
+  title: "MonteCarloo — What If the World Changes? Simulate Your Stocks.",
   description:
-    "Simulate how geopolitical events, macro shifts, and sector news impact your stocks. Powered by Polymarket odds and Monte Carlo simulation.",
-  keywords: ["stock simulator", "monte carlo", "polymarket", "geopolitical events", "stock analysis"],
+    "Monte Carlo simulation + Polymarket live odds + AI character debates. See how Iran, Fed rate cuts, tariffs, and 18 events impact any US stock. Free, no signup.",
+  keywords: ["stock simulator", "monte carlo simulation", "polymarket odds", "geopolitical stock impact", "what if stock analysis", "AI stock debate", "event simulator", "options trading", "iran oil stocks", "fed rate cut stocks"],
   openGraph: {
-    title: "MonteCarloo — What-if Stock Event Simulator",
-    description: "See the impact of world events on your stocks before they happen.",
+    title: "MonteCarloo — What If the World Changes?",
+    description: "Simulate how Iran, Fed rate cuts, tariffs, and 18 events impact your stocks. Live Polymarket odds × Monte Carlo × AI debates. Free.",
     type: "website",
+    url: "https://montecarloo.com",
+    siteName: "MonteCarloo",
+    images: [
+      {
+        url: "https://api.montecarloo.com/api/og/home",
+        width: 1200,
+        height: 630,
+        alt: "MonteCarloo — Stock Event Simulator",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MonteCarloo — What If the World Changes?",
+    description: "Simulate how events impact your stocks. Monte Carlo × Polymarket × AI debates.",
+    images: ["https://api.montecarloo.com/api/og/home"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  alternates: {
+    canonical: "https://montecarloo.com",
   },
 };
 
