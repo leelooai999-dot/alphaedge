@@ -179,6 +179,7 @@ def calculate_stock_impact(
 ) -> float:
     """
     Calculate net stock price impact from commodity movements.
+    Handles correlated commodities (WTI/BRENT, etc.) to avoid double-counting.
     
     Args:
         commodity_impacts: Dict of commodity_id → % change (from calculate_commodity_impacts)
@@ -187,11 +188,46 @@ def calculate_stock_impact(
     Returns:
         Net stock impact in % (e.g., 14.2 means +14.2%)
     """
+    # Correlation groups: commodities that are >80% correlated.
+    # Within a group, use the single largest impact × max beta (not sum).
+    CORRELATION_GROUPS = {
+        "oil": ["WTI", "BRENT"],          # ~95% correlated
+    }
+    
+    # Build reverse map: commodity → group name
+    commodity_to_group = {}
+    for group_name, members in CORRELATION_GROUPS.items():
+        for m in members:
+            commodity_to_group[m] = group_name
+    
     total_impact = 0.0
+    processed_groups = set()
     
     for commodity_id, beta in stock_betas.items():
         commodity_change = commodity_impacts.get(commodity_id, 0.0)
-        total_impact += commodity_change * beta
+        if commodity_change == 0.0 and beta == 0.0:
+            continue
+            
+        group = commodity_to_group.get(commodity_id)
+        if group and group not in processed_groups:
+            # For correlated group: pick the member with the largest absolute
+            # weighted impact (change × beta) and use only that one.
+            members = CORRELATION_GROUPS[group]
+            best_impact = 0.0
+            for member in members:
+                m_beta = stock_betas.get(member, 0.0)
+                m_change = commodity_impacts.get(member, 0.0)
+                m_impact = m_change * m_beta
+                if abs(m_impact) > abs(best_impact):
+                    best_impact = m_impact
+            total_impact += best_impact
+            processed_groups.add(group)
+        elif group:
+            # Already processed this group
+            continue
+        else:
+            # Independent commodity — add normally
+            total_impact += commodity_change * beta
     
     return total_impact
 

@@ -29,13 +29,15 @@ class CommodityImpact:
 EVENT_COMMODITY_IMPACTS: Dict[str, Dict[str, CommodityImpact]] = {
     # ──────────────────── GEOPOLITICAL ────────────────────
     "iran_escalation": {
-        "WTI":   CommodityImpact(base_pct=18.0, range_low=10, range_high=35, delay_days=0),
-        "BRENT": CommodityImpact(base_pct=20.0, range_low=12, range_high=40, delay_days=0),
-        "NATGAS": CommodityImpact(base_pct=8.0, range_low=3, range_high=18, delay_days=1),
-        "GOLD":  CommodityImpact(base_pct=5.0, range_low=2, range_high=12, delay_days=0),
-        "VIX":   CommodityImpact(base_pct=40.0, range_low=15, range_high=90, delay_days=0, duration_days=14),
-        "USD":   CommodityImpact(base_pct=1.5, range_low=0.5, range_high=4, delay_days=0),
-        "10Y":   CommodityImpact(base_pct=-0.15, range_low=-0.35, range_high=-0.05, delay_days=2),
+        # Historical: 2019 Aramco attack +15% WTI (brief), 2020 Soleimani +4%.
+        # Sustained escalation (not just strikes): 8-20% range.
+        "WTI":   CommodityImpact(base_pct=10.0, range_low=4, range_high=20, delay_days=0),
+        "BRENT": CommodityImpact(base_pct=12.0, range_low=5, range_high=22, delay_days=0),
+        "NATGAS": CommodityImpact(base_pct=4.0, range_low=1, range_high=10, delay_days=1),
+        "GOLD":  CommodityImpact(base_pct=3.0, range_low=1, range_high=8, delay_days=0),
+        "VIX":   CommodityImpact(base_pct=25.0, range_low=10, range_high=60, delay_days=0, duration_days=14),
+        "USD":   CommodityImpact(base_pct=1.0, range_low=0.3, range_high=3, delay_days=0),
+        "10Y":   CommodityImpact(base_pct=-0.10, range_low=-0.25, range_high=-0.03, delay_days=2),
     },
     "russia_ukraine": {
         "WTI":   CommodityImpact(base_pct=15.0, range_low=8, range_high=30, delay_days=0),
@@ -83,9 +85,10 @@ EVENT_COMMODITY_IMPACTS: Dict[str, Dict[str, CommodityImpact]] = {
         "NATGAS": CommodityImpact(base_pct=3.0, range_low=1, range_high=8, delay_days=2),
     },
     "oil_disruption": {
-        "WTI":   CommodityImpact(base_pct=12.0, range_low=5, range_high=30, delay_days=0),
-        "BRENT": CommodityImpact(base_pct=14.0, range_low=6, range_high=35, delay_days=0),
-        "NATGAS": CommodityImpact(base_pct=5.0, range_low=2, range_high=12, delay_days=1),
+        # Historical: Libya 2011 +20%, Iraq 2014 +10%, typical OPEC cut 5-12%.
+        "WTI":   CommodityImpact(base_pct=8.0, range_low=3, range_high=20, delay_days=0),
+        "BRENT": CommodityImpact(base_pct=9.0, range_low=4, range_high=22, delay_days=0),
+        "NATGAS": CommodityImpact(base_pct=3.0, range_low=1, range_high=8, delay_days=1),
     },
     "chip_export_control": {
         "CHIPS": CommodityImpact(base_pct=-15.0, range_low=-30, range_high=-5, delay_days=0),

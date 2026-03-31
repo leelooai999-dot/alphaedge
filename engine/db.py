@@ -58,7 +58,7 @@ class PgConnectionWrapper:
         # Convert SQLite ? placeholders to Postgres %s
         sql = _convert_placeholders(sql)
         # Convert SQLite functions (julianday, datetime) to Postgres equivalents
-        if "julianday" in sql or "datetime('now'" in sql or "date('now')" in sql:
+        if "julianday" in sql or "datetime(" in sql or "date('now')" in sql or "AUTOINCREMENT" in sql:
             sql = _sqlite_to_postgres(sql)
         cur = self._conn.cursor()
         cur.execute(sql, params or ())
@@ -156,6 +156,10 @@ def _sqlite_to_postgres(sql):
     import re
     sql = re.sub(r"datetime\('now',\s*'-(\d+)\s+days'\)", r"(NOW() - INTERVAL '\1 days')", sql)
     sql = sql.replace("date('now')", "CURRENT_DATE::text")
+    # Replace standalone datetime('now') with NOW()
+    sql = sql.replace("datetime('now')", "NOW()")
+    # Replace DEFAULT (datetime('now')) in CREATE TABLE with Postgres equivalent
+    sql = sql.replace("DEFAULT (NOW())", "DEFAULT NOW()")
     # Replace julianday() with Postgres EXTRACT(EPOCH FROM) for time diff calculations
     # julianday('now') - julianday(col) gives days difference
     sql = re.sub(
