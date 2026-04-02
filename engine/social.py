@@ -603,7 +603,11 @@ def get_leaderboard(
                     {time_filter}
                     {ticker_filter}
                 GROUP BY COALESCE(s.author_id, s.author_name)
-                HAVING engagement_score > 0
+                HAVING COALESCE(SUM(
+                        s.forks * 2.5
+                        + s.likes * 1.0
+                        + s.views * 0.01
+                    ), 0) > 0
                 ORDER BY engagement_score DESC
                 LIMIT ?
             """, (limit,)).fetchall()
