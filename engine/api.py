@@ -18,6 +18,7 @@ import marketplace
 import social  # Ensure social tables (points_ledger, etc.) are created on startup
 import json
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -848,6 +849,56 @@ def logout(authorization: Optional[str] = Header(None)):
         import auth
         auth.logout_user(token)
     return {"status": "ok"}
+
+
+@app.post("/api/auth/change-password")
+def change_password(request_body: dict, authorization: Optional[str] = Header(None)):
+    """Change password for logged-in user. Requires old_password + new_password."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    old_pw = request_body.get("old_password", "")
+    new_pw = request_body.get("new_password", "")
+    if not old_pw or not new_pw:
+        raise HTTPException(400, "old_password and new_password are required")
+    if len(new_pw) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    if not auth.change_password(user["user_id"], old_pw, new_pw):
+        raise HTTPException(400, "Current password is incorrect")
+    return {"status": "ok", "message": "Password changed successfully"}
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(request_body: dict):
+    """Request a password reset. Returns a reset token directly (no email required for now)."""
+    email = request_body.get("email", "")
+    if not email:
+        raise HTTPException(400, "Email is required")
+    import auth
+    token = auth.create_reset_token(email)
+    if not token:
+        # Don't reveal whether email exists — always return success
+        return {"status": "ok", "message": "If that email exists, a reset link has been generated."}
+    return {"status": "ok", "reset_token": token, "message": "Use this token to reset your password. Valid for 1 hour."}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(request_body: dict):
+    """Reset password using a reset token. Requires token + new_password."""
+    token = request_body.get("token", "")
+    new_pw = request_body.get("new_password", "")
+    if not token or not new_pw:
+        raise HTTPException(400, "token and new_password are required")
+    if len(new_pw) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    import auth
+    if not auth.use_reset_token(token, new_pw):
+        raise HTTPException(400, "Invalid or expired reset token")
+    return {"status": "ok", "message": "Password reset successfully. Please log in with your new password."}
 
 
 # --- Calendar Endpoints (v5) ---
@@ -2209,6 +2260,173 @@ def chat_with_character(req: CharacterChatRequest, authorization: Optional[str] 
     except Exception as e:
         logger.error(f"Character chat error: {e}")
         raise HTTPException(500, f"Chat error: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Debate Game API
+# ---------------------------------------------------------------------------
+
+class BetRequest(BaseModel):
+    debate_id: str
+    character_id: str
+    character_name: str
+    side: str = "bullish"
+    points_wagered: int = 10
+    ticker: str
+    target_price: float = 0
+    odds: float = 1.0
+
+class DraftRequest(BaseModel):
+    character_id: str
+    character_name: str
+    emoji: str = "🧑"
+
+class ReactionRequest(BaseModel):
+    debate_id: str
+    reaction_index: int
+    reaction_type: str = "fire"
+
+
+@app.on_event("startup")
+def init_debate_tables():
+    try:
+        import debate_game
+        debate_game.init_debate_game_db()
+    except Exception as e:
+        logger.warning(f"Debate game table init on startup: {e}")
+
+
+@app.post("/api/debate/bet")
+def place_debate_bet(req: BetRequest, authorization: Optional[str] = Header(None)):
+    """Place a bet on a character's position."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required to place bets")
+    
+    result = debate_game.place_bet(
+        user_id=user_id,
+        debate_id=req.debate_id,
+        character_id=req.character_id,
+        character_name=req.character_name,
+        side=req.side,
+        points_wagered=req.points_wagered,
+        ticker=req.ticker,
+        target_price=req.target_price,
+        odds=req.odds,
+    )
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@app.get("/api/debate/{debate_id}/bets")
+def get_debate_bets(debate_id: str):
+    """Get all bets and live odds for a debate."""
+    import debate_game
+    return debate_game.get_debate_bets(debate_id)
+
+
+@app.get("/api/debate/my-bets")
+def get_my_bets(authorization: Optional[str] = Header(None), resolved: Optional[bool] = None):
+    """Get user's betting history."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required")
+    return debate_game.get_user_bets(user_id, resolved)
+
+
+@app.post("/api/debate/reaction")
+def add_debate_reaction(req: ReactionRequest, authorization: Optional[str] = Header(None)):
+    """React to a debate message (🔥🧠🧢💰💀🚀🤡💯)."""
+    import debate_game
+    user_id = _get_user_id(authorization) or f"anon_{secrets.token_hex(4)}"
+    return debate_game.add_reaction(req.debate_id, req.reaction_index, user_id, req.reaction_type)
+
+
+@app.get("/api/debate/{debate_id}/reactions")
+def get_debate_reactions(debate_id: str):
+    """Get reaction counts for a debate."""
+    import debate_game
+    return debate_game.get_reactions(debate_id)
+
+
+@app.post("/api/team/draft")
+def draft_to_team(req: DraftRequest, authorization: Optional[str] = Header(None)):
+    """Add a character to your advisory board."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required")
+    result = debate_game.draft_character(user_id, req.character_id, req.character_name, req.emoji)
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@app.delete("/api/team/{character_id}")
+def drop_from_team(character_id: str, authorization: Optional[str] = Header(None)):
+    """Remove a character from your team."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required")
+    return debate_game.drop_character(user_id, character_id)
+
+
+@app.get("/api/team")
+def get_my_team(authorization: Optional[str] = Header(None)):
+    """Get your advisory board."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required")
+    return debate_game.get_team(user_id)
+
+
+@app.get("/api/debate/xp")
+def get_my_xp(authorization: Optional[str] = Header(None)):
+    """Get XP and level stats."""
+    import debate_game
+    user_id = _get_user_id(authorization)
+    if not user_id:
+        raise HTTPException(401, "Login required")
+    return debate_game.get_xp_stats(user_id)
+
+
+@app.get("/api/debate/leaderboard")
+def game_leaderboard(limit: int = 20):
+    """Get debate game leaderboard."""
+    import debate_game
+    return debate_game.get_game_leaderboard(limit)
+
+
+@app.get("/api/characters/rankings")
+def character_rankings():
+    """Get character ELO rankings."""
+    import debate_game
+    return debate_game.get_character_rankings()
+
+
+@app.get("/api/debate/reaction-types")
+def get_reaction_types():
+    """Get available reaction types."""
+    import debate_game
+    return debate_game.REACTION_TYPES
+
+
+def _get_user_id(authorization: Optional[str]) -> Optional[str]:
+    """Extract user_id from auth token."""
+    if not authorization:
+        return None
+    try:
+        import auth
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        user = auth.get_user_by_token(token)
+        return user["user_id"] if user else None
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":

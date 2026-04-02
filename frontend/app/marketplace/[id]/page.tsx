@@ -24,6 +24,9 @@ interface Listing {
   review_count: number;
   sales_count: number;
   capabilities: string[];
+  download_url: string;
+  file_size_bytes: number;
+  purchased?: boolean;
   created_at: string;
 }
 
@@ -71,7 +74,9 @@ export default function ListingDetailPage() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [purchased, setPurchased] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
+  const [files, setFiles] = useState<any[]>([]);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState("");
@@ -82,19 +87,49 @@ export default function ListingDetailPage() {
     if (!id) return;
     const load = async () => {
       try {
-        const [listRes, revRes] = await Promise.all([
-          fetch(`${API_BASE}/api/marketplace/listings/${id}`),
+        const token = localStorage.getItem("alphaedge_token");
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const [listRes, revRes, filesRes] = await Promise.all([
+          fetch(`${API_BASE}/api/marketplace/listings/${id}`, { headers }),
           fetch(`${API_BASE}/api/marketplace/listings/${id}/reviews`),
+          fetch(`${API_BASE}/api/marketplace/listings/${id}/files`),
         ]);
         if (listRes.ok) {
           const data = await listRes.json();
           setListing(data);
-          // Detail endpoint may include reviews already
+          if (data.purchased) setPurchased(true);
           if (data.reviews) setReviews(data.reviews);
         }
         if (revRes.ok) {
           const revData = await revRes.json();
           setReviews(revData.reviews || revData);
+        }
+        if (filesRes.ok) {
+          const filesData = await filesRes.json();
+          setFiles(Array.isArray(filesData) ? filesData : (filesData.files || []));
+        }
+
+        // Also check if already purchased via purchases endpoint
+        if (token) {
+          try {
+            const purchasesRes = await fetch(`${API_BASE}/api/marketplace/purchases`, { headers });
+            if (purchasesRes.ok) {
+              const purchases = await purchasesRes.json();
+              if (Array.isArray(purchases) && purchases.some((p: any) => p.listing_id === id)) {
+                setPurchased(true);
+              }
+            }
+          } catch {}
+        }
+
+        // Check URL params for ?purchased=true (redirect from Stripe)
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get("purchased") === "true") {
+            setPurchased(true);
+          }
         }
       } catch {}
       setLoading(false);
@@ -122,7 +157,8 @@ export default function ListingDetailPage() {
         if (data.checkout_url) {
           window.location.href = data.checkout_url;
         } else {
-          alert("Purchase successful!");
+          // Free item — purchased immediately
+          setPurchased(true);
         }
       } else {
         const err = await res.json().catch(() => ({}));
@@ -132,6 +168,31 @@ export default function ListingDetailPage() {
       alert("Network error");
     }
     setPurchasing(false);
+  };
+
+  const handleDownload = async (fileId: string, filename: string) => {
+    const token = localStorage.getItem("alphaedge_token");
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/marketplace/files/${fileId}/download`, { headers });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || err.error || "Download failed");
+      }
+    } catch {
+      alert("Download failed — network error");
+    }
   };
 
   const handleSubmitReview = async () => {
@@ -360,17 +421,56 @@ export default function ListingDetailPage() {
             <div className="lg:col-span-1">
               <div className="sticky top-24 bg-card border border-border rounded-2xl p-6 space-y-4">
                 <div className="text-3xl font-bold text-white">
-                  ${(listing.price_cents / 100).toFixed(0)}
+                  {listing.price_cents === 0 ? "Free" : `$${(listing.price_cents / 100).toFixed(0)}`}
                   {listing.price_cents > 0 && <span className="text-sm font-normal text-muted"> one-time</span>}
                 </div>
 
-                <button
-                  onClick={handlePurchase}
-                  disabled={purchasing}
-                  className="w-full py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors disabled:opacity-50"
-                >
-                  {purchasing ? "Processing..." : listing.price_cents === 0 ? "Get for Free" : "Buy Now"}
-                </button>
+                {purchased ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-xl">
+                      <span className="text-green-400 text-sm">✓</span>
+                      <span className="text-green-400 text-sm font-medium">Purchased</span>
+                    </div>
+                    {files.length > 0 ? (
+                      files.map((file: any) => (
+                        <button
+                          key={file.id}
+                          onClick={() => handleDownload(file.id, file.original_filename)}
+                          className="w-full py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download {file.original_filename}
+                          {file.file_size > 0 && (
+                            <span className="text-xs opacity-70">({(file.file_size / 1024).toFixed(0)}KB)</span>
+                          )}
+                        </button>
+                      ))
+                    ) : listing.download_url ? (
+                      <a
+                        href={`${API_BASE}${listing.download_url}`}
+                        className="w-full py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors flex items-center justify-center gap-2 no-underline"
+                        download
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                      </a>
+                    ) : (
+                      <p className="text-xs text-muted text-center py-2">No files uploaded yet</p>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={handlePurchase}
+                    disabled={purchasing}
+                    className="w-full py-3 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors disabled:opacity-50"
+                  >
+                    {purchasing ? "Processing..." : listing.price_cents === 0 ? "Get for Free" : "Buy Now"}
+                  </button>
+                )}
 
                 <div className="space-y-3 pt-3 border-t border-border">
                   <div className="flex items-center justify-between text-sm">

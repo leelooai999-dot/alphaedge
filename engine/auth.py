@@ -278,6 +278,84 @@ def update_user_profile(
         conn.close()
 
 
+def change_password(user_id: str, old_password: str, new_password: str) -> bool:
+    """Change password for a logged-in user. Requires old password verification."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return False
+        if not _verify_password(old_password, row["password_hash"]):
+            return False
+        new_hash = _hash_password(new_password)
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def reset_password_by_email(email: str, new_password: str) -> bool:
+    """Admin/self-service password reset by email. Returns True if user found and updated."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (email.lower(),)).fetchone()
+        if not row:
+            return False
+        new_hash = _hash_password(new_password)
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, row["id"]))
+        # Invalidate all existing tokens for security
+        conn.execute("UPDATE auth_tokens SET is_active = 0 WHERE user_id = ?", (row["id"],))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def create_reset_token(email: str) -> Optional[str]:
+    """Create a password reset token (valid for 1 hour). Returns token or None if email not found."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (email.lower(),)).fetchone()
+        if not row:
+            return None
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        # Store reset token in auth_tokens with a special prefix
+        conn.execute("""
+            INSERT INTO auth_tokens (token, user_id, expires_at, is_active)
+            VALUES (?, ?, ?, 1)
+        """, (f"reset_{token}", row["id"], expires))
+        conn.commit()
+        return token
+    finally:
+        conn.close()
+
+
+def use_reset_token(token: str, new_password: str) -> bool:
+    """Use a reset token to set a new password. Token is consumed after use."""
+    conn = get_db()
+    try:
+        row = conn.execute("""
+            SELECT user_id FROM auth_tokens
+            WHERE token = ? AND is_active = 1
+            AND (expires_at IS NULL OR expires_at > datetime('now'))
+        """, (f"reset_{token}",)).fetchone()
+        if not row:
+            return False
+        new_hash = _hash_password(new_password)
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, row["user_id"]))
+        # Consume the reset token
+        conn.execute("UPDATE auth_tokens SET is_active = 0 WHERE token = ?", (f"reset_{token}",))
+        # Invalidate all other tokens for this user
+        conn.execute("UPDATE auth_tokens SET is_active = 0 WHERE user_id = ? AND token != ?",
+                      (row["user_id"], f"reset_{token}"))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 def logout_user(token: str) -> bool:
     """Invalidate a token."""
     conn = get_db()

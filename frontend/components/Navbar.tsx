@@ -162,11 +162,25 @@ export default function Navbar() {
                       <p className="text-[10px] text-muted">{user.email}</p>
                     </div>
                     <Link
+                      href="/purchases"
+                      className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      🛍️ My Purchases
+                    </Link>
+                    <Link
                       href="/points"
                       className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
                       onClick={() => setShowUserMenu(false)}
                     >
                       ⭐ {user.points} points · Redeem →
+                    </Link>
+                    <Link
+                      href={`/profile/${user.id}`}
+                      className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      👤 My Profile
                     </Link>
                     <Link
                       href="/leaderboard"
@@ -265,6 +279,13 @@ export default function Navbar() {
             </Link>
             {user ? (
               <>
+                <Link
+                  href="/purchases"
+                  className="block py-2 text-sm text-muted hover:text-white no-underline"
+                  onClick={() => setOpen(false)}
+                >
+                  🛍️ My Purchases
+                </Link>
                 <Link
                   href="/points"
                   className="block py-2 text-sm text-muted hover:text-white no-underline"
