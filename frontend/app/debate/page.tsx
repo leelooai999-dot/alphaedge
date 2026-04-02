@@ -1,181 +1,873 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-/* ---------- types ---------- */
-interface Char { id:string; name:string; role:string; avatar_emoji:string; expertise:string[] }
-interface Pred { direction:string; target_price:number; confidence:number; change_pct?:number }
-interface Rx { character_id:string; character_name:string; display_name:string; avatar_emoji:string; tier:string; round_num:number; action:string; prediction:Pred|null; stock_impact:string|null; responding_to:string|null }
-interface Rnd { round_num:number; phase:string; reactions:Rx[]; consensus:any }
-interface Sim { ticker:string; current_price:number; event:string; event_id:string; probability:number; num_rounds:number; rounds:Rnd[]; consensus:{target_price:number;confidence:number;bull_pct:number;bear_pct:number;neutral_pct:number;num_predictions:number}|null; character_predictions:any[]; characters:{id:string;name:string;role:string;tier:string;avatar_emoji:string}[]; debate_highlights:string[] }
-interface XP { xp:number; level:number; title:string; next_level_xp:number; progress_pct:number; win_streak:number; max_streak:number; total_bets:number; total_wins:number; win_rate:number }
-interface Tm { character_id:string; character_name:string; emoji:string; slot:number }
+interface Character {
+  id: string;
+  name: string;
+  role: string;
+  avatar_emoji: string;
+  expertise: string[];
+}
 
-const RX_MAP: Record<string,string> = {fire:"🔥",brain:"🧠",cap:"🧢",money:"💰",skull:"💀",rocket:"🚀",clown:"🤡","100":"💯"};
-const EVENTS = [
-  {id:"fed_rate_cut",name:"Fed Rate Cut",desc:"Federal Reserve cuts interest rates unexpectedly"},
-  {id:"iran_escalation",name:"Iran Escalation",desc:"Military conflict escalation in the Middle East"},
-  {id:"chip_export_control",name:"Chip Export Controls",desc:"US tightens semiconductor export restrictions to China"},
-  {id:"tariff_increase",name:"Tariff Increase",desc:"Broad tariff increases on imported goods"},
-  {id:"recession",name:"Recession Signal",desc:"Major economic indicators point to recession"},
-  {id:"oil_disruption",name:"Oil Supply Disruption",desc:"Major oil supply disruption from key producing region"},
-];
+interface Reaction {
+  character_id: string;
+  character_name: string;
+  display_name: string;
+  avatar_emoji: string;
+  tier: string;
+  round_num: number;
+  action: string;
+  prediction: { direction: string; target_price: number; confidence: number } | null;
+  stock_impact: string | null;
+  responding_to: string | null;
+}
 
-export default function DebateArenaPage() {
-  /* setup */
-  const [chars, setChars] = useState<{main_characters:Char[];analysts:Char[]}>({main_characters:[],analysts:[]});
-  const [ticker,setTicker]=useState("AAPL");
-  const [evId,setEvId]=useState("fed_rate_cut");
-  const [evName,setEvName]=useState("Federal Reserve Rate Cut");
-  const [evDesc,setEvDesc]=useState("Federal Reserve cuts interest rates unexpectedly");
-  const [prob,setProb]=useState(70);
-  const [dur,setDur]=useState(30);
-  const [rounds,setRounds]=useState(4);
-  const [selMain,setSelMain]=useState<string[]>([]);
-  const [selAn,setSelAn]=useState<string[]>([]);
-  const [loading,setLoading]=useState(false);
-  const [result,setResult]=useState<Sim|null>(null);
-  const [vis,setVis]=useState(0);
-  const [err,setErr]=useState("");
-  const [did,setDid]=useState("");
-  const ref=useRef<HTMLDivElement>(null);
+interface Round {
+  round_num: number;
+  phase: string;
+  reactions: Reaction[];
+  consensus: any;
+}
 
-  /* game */
-  const [xp,setXp]=useState<XP|null>(null);
-  const [team,setTeam]=useState<{team:Tm[];size:number}>({team:[],size:0});
-  const [rxC,setRxC]=useState<Record<number,Record<string,number>>>({});
-  const [pool,setPool]=useState<any>(null);
-  const [betAmt,setBetAmt]=useState(10);
-  const [betFor,setBetFor]=useState<string|null>(null);
-  const [xpPop,setXpPop]=useState<{amt:number;reason:string}|null>(null);
-  const [rxPick,setRxPick]=useState<number|null>(null);
+interface CharacterInfo {
+  id: string;
+  name: string;
+  role: string;
+  tier: string;
+  avatar_emoji: string;
+}
 
-  /* chat */
-  const [chatId,setChatId]=useState<string|null>(null);
-  const [chatH,setChatH]=useState<{role:string;content:string;name?:string;emoji?:string}[]>([]);
-  const [chatIn,setChatIn]=useState("");
-  const [chatL,setChatL]=useState(false);
+interface SimResult {
+  ticker: string;
+  current_price: number;
+  event: string;
+  event_id: string;
+  probability: number;
+  num_rounds: number;
+  rounds: Round[];
+  consensus: {
+    target_price: number;
+    confidence: number;
+    bull_pct: number;
+    bear_pct: number;
+    neutral_pct: number;
+    num_predictions: number;
+  } | null;
+  character_predictions: any[];
+  characters: CharacterInfo[];
+  debate_highlights: string[];
+}
 
-  const flat = result ? result.rounds.flatMap((r,ri)=>r.reactions.map((rx,rxi)=>({...rx,phase:r.phase,gi:result.rounds.slice(0,ri).reduce((s,rr)=>s+rr.reactions.length,0)+rxi}))) : [];
-  const hdr = useCallback(()=>{const t=typeof window!=="undefined"?localStorage.getItem("alphaedge_token"):null;const h:Record<string,string>={"Content-Type":"application/json"};if(t)h["Authorization"]=`Bearer ${t}`;return h;},[]);
-  const logged = typeof window!=="undefined"&&!!localStorage.getItem("alphaedge_token");
-  const onTeam = (id:string) => team.team.some(t=>t.character_id===id);
+export default function DebatePage() {
+  const [characters, setCharacters] = useState<{
+    main_characters: Character[];
+    analysts: Character[];
+  }>({ main_characters: [], analysts: [] });
+  const [ticker, setTicker] = useState("AAPL");
+  const [eventId, setEventId] = useState("fed_rate_cut");
+  const [eventName, setEventName] = useState("Federal Reserve Rate Cut");
+  const [eventDesc, setEventDesc] = useState(
+    "The Federal Reserve announces an unexpected interest rate cut"
+  );
+  const [probability, setProbability] = useState(70);
+  const [duration, setDuration] = useState(30);
+  const [numRounds, setNumRounds] = useState(4);
+  const [selectedMain, setSelectedMain] = useState<string[]>([]);
+  const [selectedAnalysts, setSelectedAnalysts] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<SimResult | null>(null);
+  const [visibleReactions, setVisibleReactions] = useState(0);
+  const [error, setError] = useState("");
+  const debateRef = useRef<HTMLDivElement>(null);
 
-  useEffect(()=>{fetch(`${API}/api/characters`).then(r=>r.json()).then(setChars).catch(()=>{});if(logged){fetch(`${API}/api/debate/xp`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setXp(d)).catch(()=>{});fetch(`${API}/api/team`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setTeam(d)).catch(()=>{})}},[]);
-  useEffect(()=>{if(result&&vis<flat.length){const t=setTimeout(()=>setVis(v=>v+1),vis<3?900:400);return()=>clearTimeout(t)}},[result,vis,flat.length]);
-  useEffect(()=>{ref.current?.scrollTo({top:ref.current.scrollHeight,behavior:"smooth"})},[vis]);
-  useEffect(()=>{if(did&&result&&vis>=flat.length){fetch(`${API}/api/debate/${did}/reactions`).then(r=>r.json()).then(setRxC).catch(()=>{});fetch(`${API}/api/debate/${did}/bets`).then(r=>r.json()).then(setPool).catch(()=>{})}},[did,vis]);
-  useEffect(()=>{if(xpPop){const t=setTimeout(()=>setXpPop(null),2500);return()=>clearTimeout(t)}},[xpPop]);
+  // Flatten all reactions for animation
+  const allReactions: (Reaction & { phase: string })[] = result
+    ? result.rounds.flatMap((r) =>
+        r.reactions.map((rx) => ({ ...rx, phase: r.phase }))
+      )
+    : [];
 
-  const tog=(id:string,l:string[],s:(v:string[])=>void,m:number)=>s(l.includes(id)?l.filter(c=>c!==id):l.length<m?[...l,id]:l);
+  // Chat state
+  const [chatCharacter, setChatCharacter] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<
+    { role: string; content: string; name?: string; emoji?: string }[]
+  >([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
-  /* actions */
-  const run=async()=>{setLoading(true);setErr("");setResult(null);setVis(0);setChatId(null);setChatH([]);setRxC({});setPool(null);const d=`d_${Date.now()}`;setDid(d);try{const r=await fetch(`${API}/api/characters/simulate`,{method:"POST",headers:hdr(),body:JSON.stringify({ticker,event_id:evId,event_name:evName,event_description:evDesc,probability:prob/100,duration_days:dur,num_rounds:rounds,max_main_characters:Math.min(selMain.length||3,3),max_analysts:Math.min(selAn.length||5,5)})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(typeof e.detail==="string"?e.detail:JSON.stringify(e.detail||e))}setResult(await r.json())}catch(e:any){setErr(e.message||"Failed")}finally{setLoading(false)}};
+  useEffect(() => {
+    fetch(`${API_BASE}/api/characters`)
+      .then((r) => r.json())
+      .then(setCharacters)
+      .catch(() => {});
+  }, []);
 
-  const react=async(i:number,t:string)=>{try{const r=await fetch(`${API}/api/debate/reaction`,{method:"POST",headers:hdr(),body:JSON.stringify({debate_id:did,reaction_index:i,reaction_type:t})});const d=await r.json();fetch(`${API}/api/debate/${did}/reactions`).then(r=>r.json()).then(setRxC).catch(()=>{});if(d.success)setXpPop({amt:1,reason:"Reaction"});setRxPick(null)}catch{}};
+  // Animate reactions appearing one by one
+  useEffect(() => {
+    if (result && visibleReactions < allReactions.length) {
+      const timer = setTimeout(
+        () => setVisibleReactions((v) => v + 1),
+        500
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [result, visibleReactions, allReactions.length]);
 
-  const bet=async(cid:string,cn:string,side:string)=>{if(!logged)return alert("Login to bet!");try{const r=await fetch(`${API}/api/debate/bet`,{method:"POST",headers:hdr(),body:JSON.stringify({debate_id:did,character_id:cid,character_name:cn,side,points_wagered:betAmt,ticker:result?.ticker||ticker,target_price:0,odds:1})});if(r.ok){setXpPop({amt:5,reason:`Bet ${betAmt}pts on ${cn}`});setBetFor(null);fetch(`${API}/api/debate/${did}/bets`).then(r=>r.json()).then(setPool).catch(()=>{});fetch(`${API}/api/debate/xp`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setXp(d)).catch(()=>{})}else{const d=await r.json();alert(d.detail||"Failed")}}catch{}};
+  // Auto-scroll to latest reaction
+  useEffect(() => {
+    if (debateRef.current && visibleReactions > 0) {
+      debateRef.current.scrollTop = debateRef.current.scrollHeight;
+    }
+  }, [visibleReactions]);
 
-  const draft=async(cid:string,cn:string,em:string)=>{if(!logged)return alert("Login required!");try{const r=await fetch(`${API}/api/team/draft`,{method:"POST",headers:hdr(),body:JSON.stringify({character_id:cid,character_name:cn,emoji:em})});if(r.ok){setXpPop({amt:10,reason:`Drafted ${cn}`});fetch(`${API}/api/team`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setTeam(d)).catch(()=>{});fetch(`${API}/api/debate/xp`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setXp(d)).catch(()=>{})}else{const d=await r.json();alert(d.detail||d.error||"Failed")}}catch{}};
+  const toggleChar = (
+    id: string,
+    list: string[],
+    setter: (v: string[]) => void,
+    max: number
+  ) => {
+    if (list.includes(id)) {
+      setter(list.filter((c) => c !== id));
+    } else if (list.length < max) {
+      setter([...list, id]);
+    }
+  };
 
-  const drop=async(cid:string)=>{await fetch(`${API}/api/team/${cid}`,{method:"DELETE",headers:hdr()}).catch(()=>{});fetch(`${API}/api/team`,{headers:hdr()}).then(r=>r.ok?r.json():null).then(d=>d&&setTeam(d)).catch(()=>{})};
+  const runDebate = async () => {
+    setLoading(true);
+    setError("");
+    setResult(null);
+    setVisibleReactions(0);
+    setChatCharacter(null);
+    setChatHistory([]);
 
-  const chat=async()=>{if(!chatIn.trim()||!chatId||!result)return;setChatL(true);const m=chatIn;setChatIn("");setChatH(h=>[...h,{role:"user",content:m}]);try{const r=await fetch(`${API}/api/characters/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({character_id:chatId,message:m,ticker:result.ticker,current_price:result.current_price,event_context:`${result.event}: ${(result.probability*100).toFixed(0)}%`,history:chatH.slice(-10)})});const d=await r.json();const c=[...chars.main_characters,...chars.analysts].find(c=>c.id===chatId);setChatH(h=>[...h,{role:"assistant",content:d.response||"...",name:c?.name,emoji:c?.avatar_emoji}])}catch{setChatH(h=>[...h,{role:"assistant",content:"Connection error."}])}finally{setChatL(false)}};
+    try {
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("alphaedge_token")
+          : null;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  /* helpers */
-  const st=(p:Pred|null)=>p?.direction||"neutral";
-  const stC=(d:string)=>d==="bullish"||d==="up"?"text-green-400":d==="bearish"||d==="down"?"text-red-400":"text-yellow-400";
-  const stBg=(d:string)=>d==="bullish"||d==="up"?"border-l-green-500 bg-green-950/20":d==="bearish"||d==="down"?"border-l-red-500 bg-red-950/20":"border-l-white/20 bg-white/[0.02]";
-  const phC:Record<string,string>={event_intro:"from-amber-500/20 to-amber-500/5 text-amber-400",escalation:"from-orange-500/20 to-orange-500/5 text-orange-400",resolution:"from-purple-500/20 to-purple-500/5 text-purple-400"};
+      const res = await fetch(`${API_BASE}/api/characters/simulate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          ticker,
+          event_id: eventId,
+          event_name: eventName,
+          event_description: eventDesc,
+          probability: probability / 100,
+          duration_days: duration,
+          num_rounds: numRounds,
+          max_main_characters: Math.min(selectedMain.length || 3, 3),
+          max_analysts: Math.min(selectedAnalysts.length || 5, 5),
+        }),
+      });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err.detail === "string"
+            ? err.detail
+            : JSON.stringify(err.detail || err)
+        );
+      }
 
-  /* ========== RENDER ========== */
+      const data = await res.json();
+      setResult(data);
+    } catch (e: any) {
+      setError(e.message || "Simulation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendChat = async () => {
+    if (!chatInput.trim() || !chatCharacter || !result) return;
+    setChatLoading(true);
+    const userMsg = chatInput;
+    setChatInput("");
+    setChatHistory((h) => [...h, { role: "user", content: userMsg }]);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/characters/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character_id: chatCharacter,
+          message: userMsg,
+          ticker: result.ticker,
+          current_price: result.current_price,
+          event_context: `${result.event}: probability ${(result.probability * 100).toFixed(0)}%`,
+          history: chatHistory.slice(-10),
+        }),
+      });
+      const data = await res.json();
+      const char = [...characters.main_characters, ...characters.analysts].find(
+        (c) => c.id === chatCharacter
+      );
+      setChatHistory((h) => [
+        ...h,
+        {
+          role: "assistant",
+          content: data.response || data.detail || "...",
+          name: char?.name,
+          emoji: char?.avatar_emoji,
+        },
+      ]);
+    } catch {
+      setChatHistory((h) => [
+        ...h,
+        { role: "assistant", content: "Connection error. Try again." },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const tierBadge = (tier: string) => {
+    if (tier === "main_character")
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 uppercase font-bold">
+          Leader
+        </span>
+      );
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 uppercase font-bold">
+        Analyst
+      </span>
+    );
+  };
+
+  const stanceFromPrediction = (pred: Reaction["prediction"]) => {
+    if (!pred) return "neutral";
+    return pred.direction || "neutral";
+  };
+
+  const stanceBg = (stance: string) => {
+    if (stance === "bullish" || stance === "up")
+      return "border-green-500/30 bg-green-500/5";
+    if (stance === "bearish" || stance === "down")
+      return "border-red-500/30 bg-red-500/5";
+    return "border-white/10 bg-white/[0.02]";
+  };
+
+  const presetEvents = [
+    {
+      id: "fed_rate_cut",
+      name: "Fed Rate Cut",
+      desc: "Federal Reserve cuts interest rates unexpectedly",
+    },
+    {
+      id: "iran_escalation",
+      name: "Iran Escalation",
+      desc: "Military conflict escalation in the Middle East",
+    },
+    {
+      id: "chip_export_control",
+      name: "Chip Export Controls",
+      desc: "US tightens semiconductor export restrictions to China",
+    },
+    {
+      id: "tariff_increase",
+      name: "Tariff Increase",
+      desc: "Broad tariff increases on imported goods",
+    },
+    {
+      id: "recession",
+      name: "Recession Signal",
+      desc: "Major economic indicators point to an imminent recession",
+    },
+    {
+      id: "oil_disruption",
+      name: "Oil Supply Disruption",
+      desc: "Major oil supply disruption from key producing region",
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#06060c] text-white relative">
-      {/* XP popup */}
-      {xpPop && (
-        <div className="fixed top-20 right-6 z-[100] animate-bounce pointer-events-none">
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl px-5 py-3 shadow-2xl shadow-purple-500/30 flex items-center gap-3">
-            <span className="text-2xl">⚡</span>
-            <div><div className="text-sm font-black">+{xpPop.amt} XP</div><div className="text-[10px] text-white/60">{xpPop.reason}</div></div>
-          </div>
-        </div>
-      )}
-
-      {/* header */}
-      <div className="border-b border-white/[0.06] bg-[#06060c]/90 backdrop-blur-xl sticky top-0 z-50">
+    <div className="min-h-screen bg-[#0a0a0f] text-white">
+      {/* Header */}
+      <div className="border-b border-white/10 bg-[#0a0a0f]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 bg-clip-text text-transparent">MonteCarloo</Link>
-          <h1 className="text-lg font-black flex items-center gap-2">⚔️ <span className="bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">Debate Arena</span></h1>
-          <div className="flex items-center gap-3">
-            {xp && <div className="hidden md:flex items-center gap-1.5 text-xs bg-white/5 rounded-full px-3 py-1.5">⚡ <span className="font-bold">Lv.{xp.level}</span> <span className="text-white/40">{xp.title}</span></div>}
-            <Link href="/explore" className="text-sm text-white/40 hover:text-white/80">← Back</Link>
-          </div>
+          <Link href="/" className="flex items-center gap-2">
+            <span className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+              MonteCarloo
+            </span>
+          </Link>
+          <h1 className="text-lg font-semibold flex items-center gap-2">
+            <span>🎭</span> Character Debate
+          </h1>
+          <Link
+            href="/sim/AAPL"
+            className="text-sm text-white/50 hover:text-white/80"
+          >
+            ← Simulator
+          </Link>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* ===== SETUP ===== */}
+        {/* Setup Panel */}
         {!result && (
-          <div className="space-y-8">
-            <div className="text-center py-8">
-              <h2 className="text-4xl md:text-6xl font-black mb-4"><span className="bg-gradient-to-r from-orange-400 via-red-400 to-purple-500 bg-clip-text text-transparent">Who&apos;s Right?</span></h2>
-              <p className="text-white/40 text-lg max-w-xl mx-auto">AI characters debate a market scenario. React. Bet. Draft your team. Climb the ranks.</p>
+          <div className="space-y-6">
+            {/* Ticker + Event */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Stock Ticker
+                </label>
+                <input
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-lg font-mono focus:border-purple-500 focus:outline-none"
+                  placeholder="AAPL"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Event Scenario
+                </label>
+                <select
+                  value={eventId}
+                  onChange={(e) => {
+                    const ev = presetEvents.find((p) => p.id === e.target.value);
+                    if (ev) {
+                      setEventId(ev.id);
+                      setEventName(ev.name);
+                      setEventDesc(ev.desc);
+                    }
+                  }}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 focus:border-purple-500 focus:outline-none"
+                >
+                  {presetEvents.map((ev) => (
+                    <option key={ev.id} value={ev.id} className="bg-[#1a1a2e]">
+                      {ev.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-white/40 mb-1 uppercase tracking-[0.2em]">Ticker</label>
-                  <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} className="w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3.5 text-2xl font-mono font-black tracking-[0.15em] focus:border-purple-500/50 focus:outline-none" placeholder="AAPL" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-white/40 mb-1 uppercase tracking-[0.2em]">Scenario</label>
-                  <select value={evId} onChange={e=>{const ev=EVENTS.find(p=>p.id===e.target.value);if(ev){setEvId(ev.id);setEvName(ev.name);setEvDesc(ev.desc)}}} className="w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3.5 focus:border-purple-500/50 focus:outline-none">
-                    {EVENTS.map(ev=><option key={ev.id} value={ev.id} className="bg-[#0f0f1a]">{ev.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <input value={evDesc} onChange={e=>setEvDesc(e.target.value)} className="w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-purple-500/50 focus:outline-none" />
-              <div className="grid grid-cols-3 gap-6">
-                <div><div className="flex justify-between text-xs mb-1"><span className="text-white/40">Probability</span><span className="font-mono font-bold text-purple-400">{prob}%</span></div><input type="range" min={5} max={95} value={prob} onChange={e=>setProb(+e.target.value)} className="w-full accent-purple-500 h-1.5" /></div>
-                <div><div className="flex justify-between text-xs mb-1"><span className="text-white/40">Duration</span><span className="font-mono font-bold text-blue-400">{dur}d</span></div><input type="range" min={7} max={180} value={dur} onChange={e=>setDur(+e.target.value)} className="w-full accent-blue-500 h-1.5" /></div>
-                <div><div className="flex justify-between text-xs mb-1"><span className="text-white/40">Rounds</span><span className="font-mono font-bold text-orange-400">{rounds}</span></div><input type="range" min={2} max={8} value={rounds} onChange={e=>setRounds(+e.target.value)} className="w-full accent-orange-500 h-1.5" /></div>
-              </div>
-            </div>
-
-            {/* Characters */}
+            {/* Event Description */}
             <div>
-              <h3 className="text-xs font-bold text-white/40 mb-3 uppercase tracking-[0.2em]">👑 World Leaders (pick up to 3)</h3>
+              <label className="block text-sm text-white/60 mb-1">
+                Scenario Description
+              </label>
+              <input
+                value={eventDesc}
+                onChange={(e) => setEventDesc(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Sliders */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Probability: {probability}%
+                </label>
+                <input
+                  type="range"
+                  min={5}
+                  max={95}
+                  value={probability}
+                  onChange={(e) => setProbability(+e.target.value)}
+                  className="w-full accent-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Duration: {duration} days
+                </label>
+                <input
+                  type="range"
+                  min={7}
+                  max={180}
+                  value={duration}
+                  onChange={(e) => setDuration(+e.target.value)}
+                  className="w-full accent-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Rounds: {numRounds}
+                </label>
+                <input
+                  type="range"
+                  min={2}
+                  max={8}
+                  value={numRounds}
+                  onChange={(e) => setNumRounds(+e.target.value)}
+                  className="w-full accent-purple-500"
+                />
+              </div>
+            </div>
+
+            {/* Character Selection */}
+            <div>
+              <h3 className="text-sm font-semibold text-white/60 mb-3 uppercase tracking-wider">
+                🌍 World Leaders (pick up to 3)
+              </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {chars.main_characters.map(c=>(
-                  <button key={c.id} onClick={()=>tog(c.id,selMain,setSelMain,3)} className={`p-4 rounded-xl border text-left transition-all hover:scale-[1.02] ${selMain.includes(c.id)?"border-purple-500/50 bg-purple-500/10 ring-1 ring-purple-500/30 shadow-lg shadow-purple-500/10":"border-white/[0.06] bg-white/[0.02] hover:border-white/20"}`}>
-                    <div className="text-3xl mb-2">{c.avatar_emoji}</div>
-                    <div className="text-sm font-bold">{c.name}</div>
-                    <div className="text-[10px] text-white/30 mt-0.5">{c.role}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-white/40 mb-3 uppercase tracking-[0.2em]">📊 Analysts (pick up to 5)</h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                {chars.analysts.map(c=>(
-                  <button key={c.id} onClick={()=>tog(c.id,selAn,setSelAn,5)} className={`p-3 rounded-xl border text-left transition-all hover:scale-[1.02] ${selAn.includes(c.id)?"border-blue-500/50 bg-blue-500/10 ring-1 ring-blue-500/30":"border-white/[0.06] bg-white/[0.02] hover:border-white/20"}`}>
+                {characters.main_characters.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() =>
+                      toggleChar(c.id, selectedMain, setSelectedMain, 3)
+                    }
+                    className={`p-3 rounded-lg border text-left transition-all ${
+                      selectedMain.includes(c.id)
+                        ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500/50"
+                        : "border-white/10 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
                     <div className="text-2xl mb-1">{c.avatar_emoji}</div>
-                    <div className="text-xs font-bold">{c.name}</div>
-                    <div className="text-[10px] text-white/30 truncate">{c.role}</div>
+                    <div className="text-sm font-medium">{c.name}</div>
+                    <div className="text-xs text-white/40">{c.role}</div>
                   </button>
                 ))}
               </div>
             </div>
 
-            <button onClick={run} disabled={loading} className="w-full py-5 rounded-2xl bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 hover:from-orange-500 hover:via-red-500 hover:to-purple-500 font-black text-xl transition-all disabled:opacity-50 shadow-xl shadow-red-500/20 hover:shadow-red-500/40 hover:scale-[1.01] active:scale-[0.99]">
-              {loading?<span className="flex items-center justify-center gap-3"><svg className="animate-spin h-6 w-6" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Characters debating... (~30s)</span>:"⚔️ Launch Debate"}
+            <div>
+              <h3 className="text-sm font-semibold text-white/60 mb-3 uppercase tracking-wider">
+                📊 Analysts (pick up to 5)
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                {characters.analysts.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() =>
+                      toggleChar(
+                        c.id,
+                        selectedAnalysts,
+                        setSelectedAnalysts,
+                        5
+                      )
+                    }
+                    className={`p-3 rounded-lg border text-left transition-all ${
+                      selectedAnalysts.includes(c.id)
+                        ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50"
+                        : "border-white/10 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="text-xl mb-1">{c.avatar_emoji}</div>
+                    <div className="text-xs font-medium">{c.name}</div>
+                    <div className="text-xs text-white/40 truncate">
+                      {c.role}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Launch */}
+            <button
+              onClick={runDebate}
+              disabled={loading}
+              className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 font-semibold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg
+                    className="animate-spin h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  Characters are debating... (this takes ~30s)
+                </span>
+              ) : (
+                "🎭 Launch Debate"
+              )}
             </button>
-            {err && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm">{err}</div>}
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
           </div>
         )}
+
+        {/* Debate Results */}
+        {result && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-2xl font-bold">
+                  {result.ticker} — {result.event}
+                </h2>
+                <p className="text-white/50 text-sm">
+                  Current: ${result.current_price.toFixed(2)} · Probability:{" "}
+                  {(result.probability * 100).toFixed(0)}% ·{" "}
+                  {result.characters.length} characters ·{" "}
+                  {result.num_rounds} rounds
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setResult(null);
+                  setVisibleReactions(0);
+                  setChatCharacter(null);
+                  setChatHistory([]);
+                }}
+                className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
+              >
+                New Debate
+              </button>
+            </div>
+
+            {/* Participants */}
+            <div className="flex flex-wrap gap-2">
+              {result.characters.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs"
+                >
+                  <span>{c.avatar_emoji}</span>
+                  <span>{c.name}</span>
+                  {tierBadge(c.tier)}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Debate Feed */}
+              <div className="lg:col-span-2">
+                <div
+                  ref={debateRef}
+                  className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 scroll-smooth"
+                >
+                  {allReactions
+                    .slice(0, visibleReactions)
+                    .map((rx, i) => {
+                      const stance = stanceFromPrediction(rx.prediction);
+                      return (
+                        <div
+                          key={i}
+                          className={`border rounded-xl p-4 transition-all duration-500 animate-fadeIn ${stanceBg(
+                            stance
+                          )}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <button
+                              onClick={() => {
+                                setChatCharacter(rx.character_id);
+                                setChatHistory([]);
+                              }}
+                              className="text-3xl hover:scale-110 transition-transform cursor-pointer flex-shrink-0"
+                              title={`Chat with ${rx.display_name}`}
+                            >
+                              {rx.avatar_emoji}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-semibold text-sm">
+                                  {rx.display_name}
+                                </span>
+                                {tierBadge(rx.tier)}
+                                {rx.prediction && (
+                                  <span
+                                    className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full ${
+                                      stance === "bullish" || stance === "up"
+                                        ? "bg-green-500/20 text-green-400"
+                                        : stance === "bearish" ||
+                                          stance === "down"
+                                        ? "bg-red-500/20 text-red-400"
+                                        : "bg-yellow-500/20 text-yellow-400"
+                                    }`}
+                                  >
+                                    {stance}
+                                  </span>
+                                )}
+                                <span className="text-xs text-white/30 ml-auto">
+                                  R{rx.round_num} · {rx.phase.replace(/_/g, " ")}
+                                </span>
+                              </div>
+
+                              {/* Main action/response text */}
+                              <p className="text-sm text-white/80 whitespace-pre-line leading-relaxed">
+                                {rx.action}
+                              </p>
+
+                              {/* Prediction + Impact */}
+                              {(rx.prediction || rx.stock_impact) && (
+                                <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
+                                  {rx.prediction?.target_price && (
+                                    <span>
+                                      Target:{" "}
+                                      <span
+                                        className={
+                                          stance === "bullish" || stance === "up"
+                                            ? "text-green-400"
+                                            : stance === "bearish" ||
+                                              stance === "down"
+                                            ? "text-red-400"
+                                            : "text-yellow-400"
+                                        }
+                                      >
+                                        $
+                                        {rx.prediction.target_price.toFixed(2)}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {rx.prediction?.confidence && (
+                                    <span>
+                                      Confidence:{" "}
+                                      {(rx.prediction.confidence * 100).toFixed(
+                                        0
+                                      )}
+                                      %
+                                    </span>
+                                  )}
+                                  {rx.stock_impact && (
+                                    <span className="hidden md:inline">
+                                      Impact: {rx.stock_impact}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {rx.responding_to && (
+                                <div className="mt-1 text-xs text-white/30 italic">
+                                  → responding to {rx.responding_to}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {loading && (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-pulse text-white/40 text-sm">
+                        Characters are thinking...
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sidebar */}
+              <div className="space-y-4">
+                {/* Consensus */}
+                {visibleReactions >= allReactions.length &&
+                  result.consensus && (
+                    <div className="border border-purple-500/30 bg-purple-500/5 rounded-xl p-4 animate-fadeIn">
+                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                        <span>🤝</span> Consensus
+                      </h3>
+                      <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div>
+                          <div className="text-green-400 font-bold text-lg">
+                            {result.consensus.bull_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Bullish</div>
+                        </div>
+                        <div>
+                          <div className="text-yellow-400 font-bold text-lg">
+                            {result.consensus.neutral_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Neutral</div>
+                        </div>
+                        <div>
+                          <div className="text-red-400 font-bold text-lg">
+                            {result.consensus.bear_pct}%
+                          </div>
+                          <div className="text-xs text-white/40">Bearish</div>
+                        </div>
+                      </div>
+                      {result.consensus.target_price > 0 && (
+                        <div className="text-sm mb-2">
+                          <span className="text-white/50">
+                            Consensus Target:{" "}
+                          </span>
+                          <span className="font-bold text-lg">
+                            ${result.consensus.target_price.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-white/40 ml-2">
+                            (
+                            {(
+                              ((result.consensus.target_price -
+                                result.current_price) /
+                                result.current_price) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-xs text-white/40">
+                        Based on {result.consensus.num_predictions} predictions
+                        · Confidence: {result.consensus.confidence}%
+                      </div>
+                    </div>
+                  )}
+
+                {/* Character Predictions */}
+                {visibleReactions >= allReactions.length &&
+                  result.character_predictions?.length > 0 && (
+                    <div className="border border-white/10 rounded-xl p-4">
+                      <h3 className="font-semibold text-sm mb-3">
+                        📊 Price Targets
+                      </h3>
+                      <div className="space-y-2">
+                        {result.character_predictions.map((cp: any, i: number) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between text-sm"
+                          >
+                            <span className="text-white/60">
+                              {cp.avatar_emoji} {cp.character_name}
+                            </span>
+                            <span
+                              className={`font-mono ${
+                                cp.direction === "up" || cp.direction === "bullish"
+                                  ? "text-green-400"
+                                  : cp.direction === "down" || cp.direction === "bearish"
+                                  ? "text-red-400"
+                                  : "text-yellow-400"
+                              }`}
+                            >
+                              ${cp.target_price?.toFixed(2) || "—"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Debate Highlights */}
+                {result.debate_highlights?.length > 0 && (
+                  <div className="border border-white/10 rounded-xl p-4">
+                    <h3 className="font-semibold text-sm mb-2">⚡ Highlights</h3>
+                    <div className="space-y-1">
+                      {result.debate_highlights.map((h, i) => (
+                        <p key={i} className="text-xs text-white/50">
+                          • {h}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Chat Panel */}
+                {chatCharacter && (
+                  <div className="border border-blue-500/30 bg-blue-500/5 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-sm flex items-center gap-2">
+                        <span>💬</span> Chat with{" "}
+                        {[
+                          ...characters.main_characters,
+                          ...characters.analysts,
+                        ].find((c) => c.id === chatCharacter)?.name ||
+                          chatCharacter}
+                      </h3>
+                      <button
+                        onClick={() => setChatCharacter(null)}
+                        className="text-white/40 hover:text-white/80 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
+                      {chatHistory.length === 0 && (
+                        <p className="text-xs text-white/30 text-center py-4">
+                          Ask anything about their position...
+                        </p>
+                      )}
+                      {chatHistory.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={`text-xs p-2 rounded-lg ${
+                            msg.role === "user"
+                              ? "bg-white/10 text-white/80 ml-8"
+                              : "bg-blue-500/10 text-white/70 mr-4"
+                          }`}
+                        >
+                          {msg.role === "assistant" && msg.emoji && (
+                            <span className="mr-1">{msg.emoji}</span>
+                          )}
+                          {msg.content}
+                        </div>
+                      ))}
+                      {chatLoading && (
+                        <div className="text-xs text-white/30 animate-pulse">
+                          typing...
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                        placeholder="Ask a follow-up..."
+                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={sendChat}
+                        disabled={chatLoading}
+                        className="px-3 py-2 bg-blue-600 rounded-lg text-xs hover:bg-blue-500 disabled:opacity-50"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!chatCharacter && visibleReactions > 0 && (
+                  <div className="text-xs text-white/30 text-center p-4 border border-white/5 rounded-xl">
+                    👆 Click any character&apos;s emoji to start a private chat
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.5s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+}
