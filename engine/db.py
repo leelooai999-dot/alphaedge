@@ -138,6 +138,7 @@ def _sqlite_to_postgres(sql):
     # Replace AUTOINCREMENT with SERIAL (not needed, we use TEXT PKs)
     sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
     # Replace INSERT OR IGNORE with INSERT ... ON CONFLICT DO NOTHING
+    # We add a marker that will be appended after VALUES clause
     sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
     # Add ON CONFLICT DO NOTHING to INSERT INTO stats
     sql = sql.replace(

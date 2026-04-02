@@ -125,10 +125,28 @@ export default function ListingDetailPage() {
         }
 
         // Check URL params for ?purchased=true (redirect from Stripe)
+        // Also verify with backend to complete the purchase
         if (typeof window !== "undefined") {
           const params = new URLSearchParams(window.location.search);
-          if (params.get("purchased") === "true") {
-            setPurchased(true);
+          if (params.get("purchased") === "true" && token) {
+            // Call verify endpoint to complete the purchase via Stripe check
+            fetch(`${API_BASE}/api/marketplace/purchase/${id}/verify`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            })
+              .then((r) => r.json())
+              .then((data) => {
+                if (data.purchased || data.status === "completed" || data.status === "already_completed") {
+                  setPurchased(true);
+                }
+              })
+              .catch(() => {
+                // Fallback: trust the URL param
+                setPurchased(true);
+              });
           }
         }
       } catch {}

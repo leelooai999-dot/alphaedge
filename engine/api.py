@@ -14,6 +14,7 @@ from events import EVENTS, list_all_events, list_categories
 from db import increment_sim_counter, get_stats as get_global_stats, get_db
 import scenarios
 import time
+import os
 import marketplace
 import social  # Ensure social tables (points_ledger, etc.) are created on startup
 import json
@@ -1771,6 +1772,64 @@ def marketplace_purchase(
         return result
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/marketplace/purchase/{listing_id}/verify")
+def marketplace_verify_purchase(
+    listing_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Verify and complete a pending marketplace purchase by checking Stripe directly.
+    Called by frontend as fallback when returning from Stripe checkout.
+    """
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+
+    from db import get_db
+    conn = get_db()
+    try:
+        # Find pending purchase for this user+listing
+        purchase = conn.execute(
+            "SELECT id, stripe_checkout_session_id, status FROM marketplace_purchases WHERE listing_id = ? AND buyer_id = ? ORDER BY created_at DESC LIMIT 1",
+            (listing_id, user["user_id"])
+        ).fetchone()
+
+        if not purchase:
+            raise HTTPException(404, "No purchase found")
+
+        if purchase["status"] == "completed":
+            return {"status": "already_completed", "purchased": True}
+
+        session_id = purchase["stripe_checkout_session_id"]
+        if not session_id:
+            raise HTTPException(400, "No checkout session found")
+
+        # Check with Stripe if payment was completed
+        stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        if not stripe_key:
+            raise HTTPException(500, "Stripe not configured")
+
+        import stripe
+        stripe.api_key = stripe_key
+        session = stripe.checkout.Session.retrieve(session_id)
+
+        if session.payment_status == "paid":
+            # Complete the purchase
+            result = marketplace.complete_purchase(session_id)
+            if result:
+                return {"status": "completed", "purchased": True}
+            else:
+                return {"status": "error", "detail": "Could not complete purchase"}
+        else:
+            return {"status": "pending", "payment_status": session.payment_status, "purchased": False}
+    finally:
+        conn.close()
 
 
 @app.get("/api/marketplace/purchases")

@@ -296,18 +296,32 @@ def process_webhook_event(event: dict):
     # Deduplicate
     conn = get_db()
     try:
-        existing = conn.execute(
-            "SELECT id FROM stripe_events WHERE id = ?", (event_id,)
-        ).fetchone()
-        if existing:
-            return {"status": "already_processed"}
+        try:
+            existing = conn.execute(
+                "SELECT id FROM stripe_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if existing:
+                return {"status": "already_processed"}
+        except Exception:
+            # stripe_events table might not exist yet, continue
+            pass
     finally:
         conn.close()
 
     result = {"status": "processed", "event_type": event_type}
 
     if event_type == "checkout.session.completed":
-        _handle_checkout_completed(data)
+        # Determine if this is a subscription or a one-time marketplace purchase
+        mode = data.get("mode", "")
+        purchase_id = data.get("metadata", {}).get("purchase_id")
+        listing_id = data.get("metadata", {}).get("listing_id")
+
+        if mode == "payment" and (purchase_id or listing_id):
+            # One-time marketplace purchase — complete it
+            _handle_marketplace_checkout_completed(data)
+        else:
+            # Subscription checkout
+            _handle_checkout_completed(data)
     elif event_type == "customer.subscription.updated":
         _handle_subscription_updated(data)
     elif event_type == "customer.subscription.deleted":
@@ -317,18 +331,47 @@ def process_webhook_event(event: dict):
     elif event_type == "invoice.payment_failed":
         _handle_payment_failed(data)
 
-    # Record event
+    # Record event (Postgres-compatible upsert)
     conn = get_db()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO stripe_events (id, event_type, data) VALUES (?, ?, ?)",
-            (event_id, event_type, json.dumps(data))
-        )
+        try:
+            conn.execute(
+                "INSERT INTO stripe_events (id, event_type, data) VALUES (?, ?, ?)",
+                (event_id, event_type, json.dumps(data))
+            )
+        except Exception:
+            # Already exists (duplicate event), ignore
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         conn.commit()
     finally:
         conn.close()
 
     return result
+
+
+def _handle_marketplace_checkout_completed(session: dict):
+    """Handle successful one-time marketplace purchase checkout."""
+    session_id = session.get("id", "")
+    purchase_id = session.get("metadata", {}).get("purchase_id")
+    listing_id = session.get("metadata", {}).get("listing_id")
+    buyer_id = session.get("metadata", {}).get("buyer_id")
+
+    if not session_id:
+        logger.warning("Marketplace checkout completed without session_id")
+        return
+
+    try:
+        import marketplace
+        result = marketplace.complete_purchase(session_id)
+        if result:
+            logger.info(f"Marketplace purchase completed: purchase={purchase_id}, listing={listing_id}, buyer={buyer_id}")
+        else:
+            logger.warning(f"Marketplace purchase not found for session: {session_id}")
+    except Exception as e:
+        logger.error(f"Failed to complete marketplace purchase: {e}")
 
 
 def _handle_checkout_completed(session: dict):

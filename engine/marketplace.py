@@ -18,6 +18,7 @@ from typing import Optional, List, Tuple
 from dataclasses import dataclass
 
 import file_scanner
+from db import get_db, USE_POSTGRES
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,6 @@ logger = logging.getLogger(__name__)
 _DATA_DIR = os.environ.get("DATA_DIR", "/data")
 if not os.path.isdir(_DATA_DIR):
     _DATA_DIR = "/tmp"
-DB_PATH = os.environ.get("MONTECARLOO_DB", os.path.join(_DATA_DIR, "montecarloo.db"))
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY", "")
 PLATFORM_COMMISSION = 0.30  # 30% platform take
 
@@ -36,11 +36,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # ---------- DB Setup ----------
 
 def _db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    """Use the shared DB connection (Postgres in prod, SQLite in dev)."""
+    return get_db()
 
 def init_marketplace_db():
     """Create marketplace tables if they don't exist."""
@@ -461,12 +458,17 @@ def create_purchase(listing_id: str, buyer_id: str) -> dict:
     
     # Check if already purchased
     existing = conn.execute(
-        "SELECT id FROM marketplace_purchases WHERE listing_id = ? AND buyer_id = ? AND status = 'completed'",
+        "SELECT id, status, stripe_checkout_session_id FROM marketplace_purchases WHERE listing_id = ? AND buyer_id = ?",
         (listing_id, buyer_id)
     ).fetchone()
     if existing:
-        conn.close()
-        raise ValueError("Already purchased")
+        if existing["status"] == "completed":
+            conn.close()
+            raise ValueError("Already purchased")
+        # If pending, delete the stale record so user can retry
+        if existing["status"] == "pending":
+            conn.execute("DELETE FROM marketplace_purchases WHERE id = ?", (existing["id"],))
+            conn.commit()
     
     price = listing["price_cents"]
     commission = int(price * PLATFORM_COMMISSION)
@@ -1012,16 +1014,23 @@ def seed_marketplace():
     
     # Create system creator profile
     system_id = "system-montecarloo"
-    conn.execute("""
-        INSERT OR IGNORE INTO creator_profiles 
-        (user_id, display_name, bio, company, verified)
-        VALUES (?, ?, ?, ?, 1)
-    """, (
-        system_id,
-        "MonteCarloo Team",
-        "The creators of MonteCarloo — What-if Stock Event Simulator. We build tools that help you think about the future of markets.",
-        "MonteCarloo",
-    ))
+    try:
+        conn.execute("""
+            INSERT INTO creator_profiles 
+            (user_id, display_name, bio, company, verified)
+            VALUES (?, ?, ?, ?, 1)
+        """, (
+            system_id,
+            "MonteCarloo Team",
+            "The creators of MonteCarloo — What-if Stock Event Simulator. We build tools that help you think about the future of markets.",
+            "MonteCarloo",
+        ))
+    except Exception:
+        # Already exists
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     
     # Seed listings
     listings = [
