@@ -378,6 +378,84 @@ def save_trades(trades: List[Dict]):
         conn.close()
 
 
+def ensure_whale_table():
+    """Create whale_trades table if it doesn't exist (lazy init)."""
+    from db import get_db, USE_POSTGRES
+    conn = get_db()
+    try:
+        if USE_POSTGRES:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS whale_trades (
+                    id SERIAL PRIMARY KEY,
+                    ticker TEXT NOT NULL,
+                    strike REAL NOT NULL,
+                    expiry TEXT NOT NULL,
+                    option_type TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    bullish_bearish TEXT NOT NULL,
+                    volume INTEGER NOT NULL,
+                    open_interest INTEGER NOT NULL,
+                    last_price REAL NOT NULL,
+                    bid REAL NOT NULL,
+                    ask REAL NOT NULL,
+                    estimated_premium REAL NOT NULL,
+                    iv REAL,
+                    volume_oi_ratio REAL,
+                    position_type TEXT,
+                    is_multileg BOOLEAN DEFAULT FALSE,
+                    multileg_group_id TEXT,
+                    analysis_cache TEXT,
+                    analysis_cached_at TEXT,
+                    scanned_at TEXT NOT NULL,
+                    scan_date TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(ticker, strike, expiry, option_type, scan_date)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_whale_ticker ON whale_trades(ticker)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_whale_premium ON whale_trades(estimated_premium DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_whale_date ON whale_trades(scan_date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_whale_direction ON whale_trades(bullish_bearish)")
+        else:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS whale_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker TEXT NOT NULL,
+                    strike REAL NOT NULL,
+                    expiry TEXT NOT NULL,
+                    option_type TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    bullish_bearish TEXT NOT NULL,
+                    volume INTEGER NOT NULL,
+                    open_interest INTEGER NOT NULL,
+                    last_price REAL NOT NULL,
+                    bid REAL NOT NULL,
+                    ask REAL NOT NULL,
+                    estimated_premium REAL NOT NULL,
+                    iv REAL,
+                    volume_oi_ratio REAL,
+                    position_type TEXT,
+                    is_multileg BOOLEAN DEFAULT FALSE,
+                    multileg_group_id TEXT,
+                    analysis_cache TEXT,
+                    analysis_cached_at TEXT,
+                    scanned_at TEXT NOT NULL,
+                    scan_date TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(ticker, strike, expiry, option_type, scan_date)
+                );
+                CREATE INDEX IF NOT EXISTS idx_whale_ticker ON whale_trades(ticker);
+                CREATE INDEX IF NOT EXISTS idx_whale_premium ON whale_trades(estimated_premium DESC);
+                CREATE INDEX IF NOT EXISTS idx_whale_date ON whale_trades(scan_date);
+                CREATE INDEX IF NOT EXISTS idx_whale_direction ON whale_trades(bullish_bearish);
+            """)
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"ensure_whale_table: {e}")
+    finally:
+        conn.close()
+
+
 def get_whale_trades(
     ticker: Optional[str] = None,
     direction: Optional[str] = None,
@@ -390,6 +468,7 @@ def get_whale_trades(
     """Query whale trades with filters. Returns (trades, total_count)."""
     from db import get_db, USE_POSTGRES
 
+    ensure_whale_table()
     conn = get_db()
     try:
         conditions = ["estimated_premium >= ?"]
@@ -463,6 +542,7 @@ def get_trade_by_id(trade_id: int) -> Optional[Dict]:
     """Get a single whale trade by ID."""
     from db import get_db
 
+    ensure_whale_table()
     conn = get_db()
     try:
         row = conn.execute("SELECT * FROM whale_trades WHERE id = ?", (trade_id,)).fetchone()

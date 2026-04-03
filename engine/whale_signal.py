@@ -210,6 +210,8 @@ def compute_drift_adjustment(trade_ids: List[int] = None, ticker: str = None) ->
 def get_flow_stats(scan_date: Optional[str] = None) -> Dict:
     """Get aggregate whale flow stats for the day."""
     from db import get_db
+    import whale_flow
+    whale_flow.ensure_whale_table()
 
     target_date = scan_date or date.today().isoformat()
     conn = get_db()

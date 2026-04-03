@@ -2444,6 +2444,11 @@ def init_debate_tables():
         debate_game.init_debate_game_db()
     except Exception as e:
         logger.warning(f"Debate game table init on startup: {e}")
+    try:
+        import whale_flow
+        whale_flow.ensure_whale_table()
+    except Exception as e:
+        logger.warning(f"Whale flow table init on startup: {e}")
 
 
 @app.post("/api/debate/bet")

@@ -610,31 +610,33 @@ def get_game_leaderboard(limit: int = 20) -> List[Dict]:
         rows = conn.execute(
             """SELECT dx.user_id, dx.xp, dx.level, dx.win_streak, dx.max_streak,
                       dx.total_bets, dx.total_wins, dx.total_points_won,
-                      COALESCE(a.username, 'Anonymous') as username
+                      COALESCE(a.display_name, 'Anonymous') as display_name
                FROM debate_xp dx
-               LEFT JOIN auth a ON a.user_id = dx.user_id
+               LEFT JOIN users a ON a.id = dx.user_id
                ORDER BY dx.xp DESC LIMIT ?""",
             (limit,)
         ).fetchall()
         
         leaderboard = []
         for i, row in enumerate(rows):
-            xp = row[1]
+            xp = row["xp"]
             level, title, _, progress = _get_level(xp)
-            win_rate = (row[6] / row[5] * 100) if row[5] > 0 else 0
+            total_bets = row["total_bets"]
+            total_wins = row["total_wins"]
+            win_rate = (total_wins / total_bets * 100) if total_bets > 0 else 0
             leaderboard.append({
                 "rank": i + 1,
-                "user_id": row[0],
-                "username": row[8],
+                "user_id": row["user_id"],
+                "username": row["display_name"] if row["display_name"] else "Anonymous",
                 "xp": xp,
                 "level": level,
                 "title": title,
-                "win_streak": row[3],
-                "max_streak": row[4],
-                "total_bets": row[5],
-                "wins": row[6],
+                "win_streak": row["win_streak"],
+                "max_streak": row["max_streak"],
+                "total_bets": total_bets,
+                "wins": total_wins,
                 "win_rate": round(win_rate, 1),
-                "total_won": row[7],
+                "total_won": row["total_points_won"],
             })
         
         return leaderboard
