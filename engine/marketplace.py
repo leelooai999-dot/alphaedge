@@ -50,8 +50,8 @@ def init_marketplace_db():
             stripe_transfer_id TEXT DEFAULT '',
             stripe_payout_id TEXT DEFAULT '',
             status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT NOW(),
-            completed_at TIMESTAMP
+            created_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_payouts_creator ON marketplace_payouts(creator_id);

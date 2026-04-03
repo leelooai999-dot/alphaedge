@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -11,6 +12,7 @@ interface DashboardData {
   total_revenue_cents: number;
   total_sales: number;
   avg_rating: number;
+  total_payout_cents: number;
   listings: {
     id: string;
     title: string;
@@ -22,6 +24,18 @@ interface DashboardData {
     review_count: number;
     created_at: string;
   }[];
+}
+
+interface ConnectStatus {
+  connected: boolean;
+  account_id: string | null;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  requirements?: {
+    currently_due: string[];
+    disabled_reason?: string;
+  };
 }
 
 interface Purchase {
@@ -43,12 +57,39 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: "bg-red-500/10 text-red-400",
 };
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
   const [tab, setTab] = useState<"selling" | "purchased">("selling");
   const [loading, setLoading] = useState(true);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectMsg, setConnectMsg] = useState("");
   const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+
+  const getHeaders = useCallback((): Record<string, string> => {
+    const token = localStorage.getItem("alphaedge_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
+
+  const loadConnectStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/marketplace/creator/connect/status`, {
+        headers: getHeaders(),
+      });
+      if (res.ok) setConnectStatus(await res.json());
+    } catch {}
+  }, [getHeaders]);
+
+  useEffect(() => {
+    const connectParam = searchParams.get("connect");
+    if (connectParam === "complete") {
+      setConnectMsg("✓ Stripe setup complete! Your account is being verified.");
+    } else if (connectParam === "refresh") {
+      setConnectMsg("Your onboarding link expired. Please complete setup again.");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const load = async () => {
@@ -66,11 +107,74 @@ export default function DashboardPage() {
         ]);
         if (dashRes.ok) setDashboard(await dashRes.json());
         if (purchRes.ok) setPurchases(await purchRes.json());
+
+        // Also load connect status
+        await loadConnectStatus();
       } catch {}
       setLoading(false);
     };
     load();
-  }, []);
+  }, [loadConnectStatus]);
+
+  const handleConnectStripe = async () => {
+    setConnectLoading(true);
+    setConnectMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/api/marketplace/creator/connect`, {
+        method: "POST",
+        headers: getHeaders(),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        window.location.href = url;
+      } else {
+        const err = await res.json();
+        setConnectMsg(`Error: ${err.detail || "Failed to start Stripe setup"}`);
+      }
+    } catch {
+      setConnectMsg("Error: Network error. Please try again.");
+    }
+    setConnectLoading(false);
+  };
+
+  const handleRefreshOnboarding = async () => {
+    setConnectLoading(true);
+    setConnectMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/api/marketplace/creator/connect/refresh`, {
+        method: "POST",
+        headers: getHeaders(),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        window.location.href = url;
+      } else {
+        setConnectMsg("Error refreshing onboarding link.");
+      }
+    } catch {
+      setConnectMsg("Error: Network error.");
+    }
+    setConnectLoading(false);
+  };
+
+  const handleViewStripeDashboard = async () => {
+    setConnectLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/marketplace/creator/connect/dashboard`, {
+        method: "POST",
+        headers: getHeaders(),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        window.open(url, "_blank");
+      } else {
+        setConnectMsg("Error generating dashboard link.");
+      }
+    } catch {
+      setConnectMsg("Error: Network error.");
+    }
+    setConnectLoading(false);
+  };
 
   if (loading) {
     return (
@@ -103,6 +207,10 @@ export default function DashboardPage() {
       </main>
     );
   }
+
+  // Determine Connect UI state
+  const isFullyConnected = connectStatus?.connected && connectStatus.charges_enabled && connectStatus.payouts_enabled;
+  const isPartiallyConnected = connectStatus?.connected && !isFullyConnected;
 
   return (
     <main className="min-h-screen">
@@ -154,6 +262,105 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Stripe Connect Section */}
+          <div className="bg-card border border-border rounded-2xl p-5 mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                  <span>💳</span> Stripe Payouts
+                </h2>
+                <p className="text-xs text-muted mt-0.5">
+                  Connect Stripe to receive 70% of each sale directly to your bank account.
+                </p>
+              </div>
+
+              {/* Status badge */}
+              {isFullyConnected && (
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-green-400 bg-green-500/10 px-3 py-1.5 rounded-full">
+                  <span>✓</span> Payouts Enabled
+                </span>
+              )}
+              {isPartiallyConnected && (
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400 bg-yellow-500/10 px-3 py-1.5 rounded-full">
+                  ⚠ Setup Incomplete
+                </span>
+              )}
+              {!connectStatus?.connected && (
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-muted bg-card px-3 py-1.5 rounded-full border border-border">
+                  Not Connected
+                </span>
+              )}
+            </div>
+
+            {connectMsg && (
+              <div className={`text-xs px-3 py-2 rounded-lg mb-3 ${connectMsg.startsWith("✓") ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                {connectMsg}
+              </div>
+            )}
+
+            {/* Fully connected — show earnings + dashboard button */}
+            {isFullyConnected && (
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="bg-bg/50 rounded-xl p-3">
+                  <p className="text-xs text-muted mb-1">Total Earned</p>
+                  <p className="text-lg font-bold text-white">
+                    ${((dashboard?.total_revenue_cents ?? 0) / 100).toFixed(2)}
+                  </p>
+                </div>
+                <div className="bg-bg/50 rounded-xl p-3">
+                  <p className="text-xs text-muted mb-1">Paid Out</p>
+                  <p className="text-lg font-bold text-green-400">
+                    ${((dashboard?.total_payout_cents ?? 0) / 100).toFixed(2)}
+                  </p>
+                </div>
+                <div className="bg-bg/50 rounded-xl p-3">
+                  <p className="text-xs text-muted mb-1">Platform Fee</p>
+                  <p className="text-lg font-bold text-muted">30%</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              {/* Not connected */}
+              {!connectStatus?.connected && (
+                <button
+                  onClick={handleConnectStripe}
+                  disabled={connectLoading}
+                  className="px-4 py-2 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm disabled:opacity-50"
+                >
+                  {connectLoading ? "Loading…" : "Connect Stripe →"}
+                </button>
+              )}
+
+              {/* Connected but not complete */}
+              {isPartiallyConnected && (
+                <>
+                  <button
+                    onClick={handleRefreshOnboarding}
+                    disabled={connectLoading}
+                    className="px-4 py-2 bg-yellow-500 text-black font-semibold rounded-xl hover:bg-yellow-400 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {connectLoading ? "Loading…" : "Complete Setup →"}
+                  </button>
+                  <p className="text-xs text-muted self-center">
+                    Your account needs additional information to enable payouts.
+                  </p>
+                </>
+              )}
+
+              {/* Fully connected */}
+              {isFullyConnected && (
+                <button
+                  onClick={handleViewStripeDashboard}
+                  disabled={connectLoading}
+                  className="px-4 py-2 bg-card border border-border text-white font-medium rounded-xl hover:border-accent hover:text-accent transition-colors text-sm disabled:opacity-50"
+                >
+                  {connectLoading ? "Loading…" : "View Stripe Dashboard ↗"}
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* Tabs */}
           <div className="flex gap-1 mb-6 border-b border-border">
@@ -290,5 +497,20 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen">
+        <Navbar />
+        <div className="pt-24 pb-16 px-4 max-w-5xl mx-auto animate-pulse space-y-4">
+          <div className="h-8 bg-card rounded w-1/4" />
+        </div>
+      </main>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 }

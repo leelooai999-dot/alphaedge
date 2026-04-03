@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import WhaleCard, { WhaleTrade } from "@/components/WhaleCard";
@@ -22,7 +22,7 @@ interface FlowStats {
   }[];
 }
 
-export default function FlowPage() {
+function FlowContent() {
   const searchParams = useSearchParams();
   const initialTicker = searchParams.get("ticker") || "";
 
@@ -299,6 +299,14 @@ export default function FlowPage() {
         onQuickSim={handleQuickSim}
       />
     </main>
+  );
+}
+
+export default function FlowPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen"><Navbar /></main>}>
+      <FlowContent />
+    </Suspense>
   );
 }
 
