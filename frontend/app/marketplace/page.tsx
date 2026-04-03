@@ -124,12 +124,20 @@ export default function MarketplacePage() {
                 AI personas, simulation skills, strategies & more — built by the community
               </p>
             </div>
-            <Link
-              href="/marketplace/create"
-              className="px-4 py-2 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm no-underline whitespace-nowrap"
-            >
-              + Create Listing
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/marketplace/dashboard"
+                className="px-4 py-2 border border-border text-white font-medium rounded-xl hover:border-accent hover:text-accent transition-colors text-sm no-underline whitespace-nowrap"
+              >
+                Creator Dashboard
+              </Link>
+              <Link
+                href="/marketplace/create"
+                className="px-4 py-2 bg-accent text-bg font-semibold rounded-xl hover:bg-accentDim transition-colors text-sm no-underline whitespace-nowrap"
+              >
+                + Create Listing
+              </Link>
+            </div>
           </div>
 
           {/* Filters */}

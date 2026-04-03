@@ -168,6 +168,13 @@ export default function Navbar() {
                       <p className="text-[10px] text-muted">{user.email}</p>
                     </div>
                     <Link
+                      href="/marketplace/dashboard"
+                      className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      🏪 Creator Dashboard
+                    </Link>
+                    <Link
                       href="/purchases"
                       className="block px-3 py-2 text-xs text-muted hover:text-white hover:bg-border/30 no-underline"
                       onClick={() => setShowUserMenu(false)}
@@ -292,6 +299,13 @@ export default function Navbar() {
             </Link>
             {user ? (
               <>
+                <Link
+                  href="/marketplace/dashboard"
+                  className="block py-2 text-sm text-muted hover:text-white no-underline"
+                  onClick={() => setOpen(false)}
+                >
+                  🏪 Creator Dashboard
+                </Link>
                 <Link
                   href="/purchases"
                   className="block py-2 text-sm text-muted hover:text-white no-underline"
