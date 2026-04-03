@@ -17,7 +17,7 @@ ANALYSIS_TTL_HOURS = 4
 
 def generate_analysis(trade: Dict) -> str:
     """Generate AI market analysis for a whale trade."""
-    from llm_router import llm_completion
+    from llm_router import chat_completion
 
     premium_m = trade["estimated_premium"] / 1_000_000
     direction_word = "bought" if trade["direction"] == "buy" else "sold"
@@ -44,7 +44,8 @@ Provide a brief, actionable analysis covering:
 Keep it under 100 words. No disclaimers."""
 
     try:
-        analysis = llm_completion(prompt, max_tokens=200, temperature=0.3)
+        messages = [{"role": "user", "content": prompt}]
+        analysis = chat_completion(messages, max_tokens=200, temperature=0.3)
         return analysis.strip()
     except Exception as e:
         logger.warning(f"LLM analysis failed for {trade['ticker']}: {e}")

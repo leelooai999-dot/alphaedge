@@ -133,6 +133,24 @@ input[type="range"]::-moz-range-thumb {
   h2 { font-size: 1rem; }
 }
 
+/* Whale drawer slide-in animation */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in-right 0.25s ease-out;
+}
+
+/* Scrollbar thin variant */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 2px;
+}
+
 /* Safe area for iOS notch */
 @supports (padding: env(safe-area-inset-bottom)) {
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }

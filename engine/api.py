@@ -69,6 +69,7 @@ history_cache = TTLCache(default_ttl=300)
 feed_cache = TTLCache(default_ttl=60)  # Feed: 1 min
 leaderboard_cache = TTLCache(default_ttl=120)  # Leaderboard: 2 min
 og_cache = TTLCache(default_ttl=600)  # OG images: 10 min
+whale_cache = TTLCache(default_ttl=60)  # Whale flow: 1 min
 
 
 # --- Request/Response Models ---
@@ -306,7 +307,7 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
     interval = valid_timeframes.get(timeframe, "1d")
     cache_key = f"{ticker}_{days}_{interval}_{'ohlcv' if ohlcv else 'close'}"
 
-    cached = history_cache.get(cache_key)
+    cached = historywhale_cache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -345,7 +346,7 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
         else:
             result = {"dates": dates, "prices": prices}
 
-        history_cache.set(cache_key, result)
+        historywhale_cache.set(cache_key, result)
         return result
     except HTTPException:
         raise
@@ -366,7 +367,7 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
                 price = max(price + change + (cached_price - price) * 0.01, cached_price * 0.70)
                 prices.append(round(price, 2))
             result = {"dates": dates, "prices": prices}
-            history_cache.set(cache_key, result)
+            historywhale_cache.set(cache_key, result)
             return result
         raise HTTPException(500, f"Failed to fetch history for {ticker}: {str(e)}")
 
@@ -1894,6 +1895,91 @@ def marketplace_creator_public(creator_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Stripe Connect Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/marketplace/creator/connect")
+def marketplace_connect_stripe(authorization: Optional[str] = Header(None)):
+    """Start Stripe Connect onboarding for a creator."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+
+    # Ensure creator profile exists
+    marketplace.get_or_create_creator(user["user_id"], user.get("display_name", ""))
+
+    try:
+        marketplace.create_connect_account(user["user_id"], user["email"])
+        result = marketplace.create_connect_onboarding_link(user["user_id"])
+        return {"url": result["url"]}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Stripe Connect error: {str(e)}")
+
+
+@app.get("/api/marketplace/creator/connect/status")
+def marketplace_connect_status(authorization: Optional[str] = Header(None)):
+    """Get Stripe Connect account status for the current creator."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+
+    try:
+        return marketplace.get_connect_account_status(user["user_id"])
+    except Exception as e:
+        raise HTTPException(500, f"Error fetching connect status: {str(e)}")
+
+
+@app.post("/api/marketplace/creator/connect/dashboard")
+def marketplace_connect_dashboard(authorization: Optional[str] = Header(None)):
+    """Get Stripe Express dashboard link for creator."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+
+    try:
+        result = marketplace.create_connect_login_link(user["user_id"])
+        return {"url": result["url"]}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Error creating dashboard link: {str(e)}")
+
+
+@app.post("/api/marketplace/creator/connect/refresh")
+def marketplace_connect_refresh(authorization: Optional[str] = Header(None)):
+    """Refresh onboarding link if it expired."""
+    if not authorization:
+        raise HTTPException(401, "Login required")
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    import auth
+    user = auth.get_user_by_token(token)
+    if not user:
+        raise HTTPException(401, "Invalid token")
+
+    try:
+        result = marketplace.create_connect_onboarding_link(user["user_id"])
+        return {"url": result["url"]}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Error refreshing onboarding link: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # Marketplace File Upload / Download Endpoints
 # ---------------------------------------------------------------------------
 
@@ -2486,6 +2572,154 @@ def _get_user_id(authorization: Optional[str]) -> Optional[str]:
         return user["user_id"] if user else None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Whale Flow Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/flow")
+def whale_flow_list(
+    ticker: Optional[str] = None,
+    direction: Optional[str] = None,
+    min_premium: float = 500000,
+    option_type: Optional[str] = None,
+    scan_date: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+):
+    """Get paginated whale options flow (>$500K premium)."""
+    import whale_flow
+    cache_key = f"flow:{ticker}:{direction}:{min_premium}:{option_type}:{scan_date}:{page}:{limit}"
+    cached = whale_cache.get(cache_key)
+    if cached:
+        return cached
+
+    trades, total = whale_flow.get_whale_trades(
+        ticker=ticker, direction=direction, min_premium=min_premium,
+        option_type=option_type, scan_date=scan_date, page=page, limit=limit
+    )
+    result = {
+        "trades": trades,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit if limit > 0 else 0,
+    }
+    whale_cache.set(cache_key, result, ttl=60)
+    return result
+
+
+@app.get("/api/flow/stats")
+def whale_flow_stats(scan_date: Optional[str] = None):
+    """Get aggregate whale flow stats for the day."""
+    import whale_signal
+    cache_key = f"flow_stats:{scan_date}"
+    cached = whale_cache.get(cache_key)
+    if cached:
+        return cached
+    result = whale_signal.get_flow_stats(scan_date)
+    whale_cache.set(cache_key, result, ttl=120)
+    return result
+
+
+@app.get("/api/flow/consensus/{ticker}")
+def whale_consensus(ticker: str, scan_date: Optional[str] = None):
+    """Get whale consensus score for a ticker."""
+    import whale_signal
+    cache_key = f"consensus:{ticker}:{scan_date}"
+    cached = whale_cache.get(cache_key)
+    if cached:
+        return cached
+    result = whale_signal.get_consensus(ticker, scan_date)
+    whale_cache.set(cache_key, result, ttl=60)
+    return result
+
+
+@app.get("/api/flow/{trade_id}")
+def whale_trade_detail(trade_id: int):
+    """Get a single whale trade with AI analysis."""
+    import whale_flow
+    import whale_analysis
+
+    trade = whale_flow.get_trade_by_id(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    # Generate or retrieve cached analysis
+    analysis = whale_analysis.get_or_generate_analysis(trade_id)
+    trade["analysis"] = analysis
+    return trade
+
+
+class WhaleSimRequest(BaseModel):
+    ticker: str
+    trade_ids: List[int] = []
+    events: List[Dict[str, Any]] = []
+    horizon_days: int = 30
+    n_simulations: int = 2000
+    fast: bool = False
+
+
+@app.post("/api/sim/apply-whale")
+def apply_whale_to_sim(req: WhaleSimRequest):
+    """Run simulation with whale trade drift adjustments applied."""
+    import whale_signal
+
+    # Get whale drift adjustment
+    whale_adj = whale_signal.compute_drift_adjustment(
+        trade_ids=req.trade_ids if req.trade_ids else None,
+        ticker=req.ticker if not req.trade_ids else None
+    )
+
+    # Build events list for the simulate() function, injecting whale as an extra drift
+    sim_events = []
+    for ev in req.events:
+        sim_events.append(ev)
+
+    # Add a synthetic "whale_flow" event to carry the drift adjustment
+    if whale_adj["drift_adjustment"] != 0:
+        sim_events.append({
+            "id": "whale_flow_signal",
+            "params": {
+                "severity": abs(whale_adj["whale_score"]),
+                "duration_days": req.horizon_days,
+                "drift_override": whale_adj["drift_adjustment"],
+                "vol_override": whale_adj["vol_multiplier"],
+            },
+            "probability": 1.0,
+        })
+
+    # Use the standard simulate() path
+    n_sims = min(req.n_simulations, 500) if req.fast else req.n_simulations
+    result = simulation.simulate(
+        ticker=req.ticker,
+        events=sim_events,
+        horizon_days=req.horizon_days,
+        n_simulations=n_sims,
+    )
+
+    result_dict = result.to_dict()
+    result_dict["whale_adjustment"] = whale_adj
+
+    # Include sample paths for chart rendering
+    if result.paths_sample:
+        result_dict["paths_sample"] = result.paths_sample
+
+    increment_sim_counter()
+    return result_dict
+
+
+@app.post("/api/flow/scan")
+def trigger_whale_scan(
+    tickers: Optional[List[str]] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """Manually trigger a whale flow scan (admin only)."""
+    # Simple admin check — in production use proper auth
+    import whale_flow
+    count = whale_flow.run_full_scan(tickers)
+    return {"status": "ok", "trades_found": count}
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
 import UpgradeModal from "@/components/UpgradeModal";
 import PyecesBadge from "@/components/PyecesBadge";
+import WhaleSidebar from "@/components/WhaleSidebar";
 import type { TimeRange } from "@/components/SimChart";
 import type { PineResult, OHLCVData } from "@/lib/pine-import";
 import { getStockOHLCV } from "@/lib/api";
@@ -46,6 +47,10 @@ export default function SimulatorPage() {
   // Pyeces bridge state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pyecesData, setPyecesData] = useState<any>(null);
+
+  // Whale flow state
+  const [appliedWhaleIds, setAppliedWhaleIds] = useState<number[]>([]);
+  const [dragOverChart, setDragOverChart] = useState(false);
 
   // Load tier limits
   useEffect(() => {
@@ -546,10 +551,62 @@ export default function SimulatorPage() {
               maxEvents={maxEvents}
               onUpgradeNeeded={() => setUpgradeModal({ open: true, reason: "events" })}
             />
+            {/* Whale Flow Sidebar */}
+            <div className="mt-3">
+              <WhaleSidebar
+                ticker={ticker}
+                appliedTradeIds={appliedWhaleIds}
+                onApplyTrades={(ids) => setAppliedWhaleIds(ids)}
+                onRemoveTrade={(id) => setAppliedWhaleIds((prev) => prev.filter((i) => i !== id))}
+                onApplyConsensus={() => {
+                  // Apply all whale trades for this ticker
+                  fetch(`${API_BASE}/api/flow?ticker=${ticker}&limit=100`)
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (data.trades) {
+                        setAppliedWhaleIds(data.trades.map((t: any) => t.id));
+                      }
+                    })
+                    .catch(() => {});
+                }}
+              />
+            </div>
           </div>
           {/* Chart + stats — shows FIRST on mobile */}
-          <div className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4">
-            <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+          <div
+            className="order-1 lg:order-2 lg:col-span-3 space-y-3 sm:space-y-4"
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes("application/whale-trade")) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setDragOverChart(true);
+              }
+            }}
+            onDragLeave={() => setDragOverChart(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverChart(false);
+              const data = e.dataTransfer.getData("application/whale-trade");
+              if (data) {
+                try {
+                  const trade = JSON.parse(data);
+                  if (trade.id && !appliedWhaleIds.includes(trade.id)) {
+                    setAppliedWhaleIds((prev) => [...prev, trade.id]);
+                  }
+                } catch {}
+              }
+            }}
+          >
+            <div className={`bg-card rounded-2xl border p-2 sm:p-4 transition-all ${
+              dragOverChart ? "border-accent border-2 shadow-lg shadow-accent/20" : "border-border"
+            }`}>
+              {dragOverChart && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-accent/5 rounded-2xl pointer-events-none">
+                  <span className="text-accent font-medium text-sm bg-bg/80 px-4 py-2 rounded-lg border border-accent/30">
+                    🐋 Drop whale trade to apply to simulation
+                  </span>
+                </div>
+              )}
               <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} pineOverlay={pineResult} />
             </div>
             {result && (
@@ -578,6 +635,36 @@ export default function SimulatorPage() {
                   sub="vs base"
                   color={changeColor}
                 />
+              </div>
+            )}
+            {/* Applied whale trades chips */}
+            {appliedWhaleIds.length > 0 && (
+              <div className="bg-card rounded-xl border border-border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-muted">🐋 Applied Whale Trades ({appliedWhaleIds.length})</span>
+                  <button
+                    onClick={() => setAppliedWhaleIds([])}
+                    className="text-[10px] text-muted hover:text-bearish transition-colors"
+                  >
+                    Clear all
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {appliedWhaleIds.map((id) => (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 text-[10px] bg-accent/20 text-accent px-2 py-1 rounded-full"
+                    >
+                      🐋 Trade #{id}
+                      <button
+                        onClick={() => setAppliedWhaleIds((prev) => prev.filter((i) => i !== id))}
+                        className="hover:text-white ml-0.5"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
             <ImpactBreakdown result={result} />

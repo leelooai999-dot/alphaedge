@@ -119,8 +119,19 @@ def scan_ticker(ticker: str, max_expiry_days: int = 60) -> List[Dict]:
                     continue
 
                 for _, row in df.iterrows():
-                    volume = int(row.get("volume", 0) or 0)
-                    last_price = float(row.get("lastPrice", 0) or 0)
+                    try:
+                        raw_vol = row.get("volume", 0)
+                        raw_price = row.get("lastPrice", 0)
+                        # yfinance returns NaN for some contracts
+                        import math
+                        if raw_vol is None or (isinstance(raw_vol, float) and math.isnan(raw_vol)):
+                            continue
+                        if raw_price is None or (isinstance(raw_price, float) and math.isnan(raw_price)):
+                            continue
+                        volume = int(raw_vol)
+                        last_price = float(raw_price)
+                    except (ValueError, TypeError):
+                        continue
                     if volume <= 0 or last_price <= 0:
                         continue
 
@@ -128,11 +139,31 @@ def scan_ticker(ticker: str, max_expiry_days: int = 60) -> List[Dict]:
                     if estimated_premium < MIN_PREMIUM:
                         continue
 
-                    bid = float(row.get("bid", 0) or 0)
-                    ask = float(row.get("ask", 0) or 0)
-                    oi = int(row.get("openInterest", 0) or 0)
-                    iv = float(row.get("impliedVolatility", 0) or 0)
-                    strike = float(row.get("strike", 0) or 0)
+                    def safe_float(val, default=0.0):
+                        import math
+                        if val is None:
+                            return default
+                        try:
+                            f = float(val)
+                            return default if math.isnan(f) else f
+                        except (ValueError, TypeError):
+                            return default
+
+                    def safe_int(val, default=0):
+                        import math
+                        if val is None:
+                            return default
+                        try:
+                            f = float(val)
+                            return default if math.isnan(f) else int(f)
+                        except (ValueError, TypeError):
+                            return default
+
+                    bid = safe_float(row.get("bid", 0))
+                    ask = safe_float(row.get("ask", 0))
+                    oi = safe_int(row.get("openInterest", 0))
+                    iv = safe_float(row.get("impliedVolatility", 0))
+                    strike = safe_float(row.get("strike", 0))
 
                     direction = detect_direction(last_price, bid, ask)
                     sentiment = detect_bullish_bearish(opt_type, direction)

@@ -330,6 +330,13 @@ def process_webhook_event(event: dict):
         _handle_payment_succeeded(data)
     elif event_type == "invoice.payment_failed":
         _handle_payment_failed(data)
+    # --- Stripe Connect events ---
+    elif event_type == "account.updated":
+        _handle_connect_account_updated(data)
+    elif event_type in ("transfer.created", "transfer.paid"):
+        _handle_connect_transfer(data, event_type)
+    elif event_type == "payout.paid":
+        _handle_connect_payout_paid(data)
 
     # Record event (Postgres-compatible upsert)
     conn = get_db()
@@ -570,6 +577,105 @@ def check_pine_overlay_limit(user_id: Optional[str], overlay_count: int) -> Dict
         "max_allowed": max_overlays,
         "upgrade_needed": not allowed,
     }
+
+
+# ---------------------------------------------------------------------------
+# Stripe Connect webhook handlers
+# ---------------------------------------------------------------------------
+
+def _handle_connect_account_updated(account: dict):
+    """Handle account.updated — refresh creator connect status in DB."""
+    account_id = account.get("id")
+    if not account_id:
+        return
+
+    charges_enabled = account.get("charges_enabled", False)
+    payouts_enabled = account.get("payouts_enabled", False)
+    details_submitted = account.get("details_submitted", False)
+
+    conn = get_db()
+    try:
+        # Find creator by connected account ID and log the update
+        row = conn.execute(
+            "SELECT user_id FROM creator_profiles WHERE stripe_connected_account_id = ?",
+            (account_id,)
+        ).fetchone()
+        if row:
+            logger.info(
+                f"Connect account updated for user {row['user_id']}: "
+                f"charges={charges_enabled}, payouts={payouts_enabled}, details={details_submitted}"
+            )
+    except Exception as e:
+        logger.warning(f"account.updated handler error: {e}")
+    finally:
+        conn.close()
+
+
+def _handle_connect_transfer(transfer: dict, event_type: str):
+    """Handle transfer.created / transfer.paid — log payout record."""
+    import secrets
+    transfer_id = transfer.get("id")
+    amount = transfer.get("amount", 0)
+    destination = transfer.get("destination")
+    if not transfer_id:
+        return
+
+    conn = get_db()
+    try:
+        # Find creator by connected account ID
+        row = conn.execute(
+            "SELECT user_id FROM creator_profiles WHERE stripe_connected_account_id = ?",
+            (destination,)
+        ).fetchone()
+        creator_id = row["user_id"] if row else ""
+
+        status = "paid" if event_type == "transfer.paid" else "pending"
+
+        # Upsert payout record
+        existing = conn.execute(
+            "SELECT id FROM marketplace_payouts WHERE stripe_transfer_id = ?",
+            (transfer_id,)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                "UPDATE marketplace_payouts SET status = ? WHERE stripe_transfer_id = ?",
+                (status, transfer_id)
+            )
+        else:
+            payout_id = secrets.token_urlsafe(12)
+            conn.execute("""
+                INSERT INTO marketplace_payouts
+                (id, creator_id, amount_cents, stripe_transfer_id, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (payout_id, creator_id, amount, transfer_id, status))
+
+        conn.commit()
+        logger.info(f"Transfer {event_type}: {transfer_id} amount={amount} creator={creator_id}")
+    except Exception as e:
+        logger.warning(f"{event_type} handler error: {e}")
+    finally:
+        conn.close()
+
+
+def _handle_connect_payout_paid(payout: dict):
+    """Handle payout.paid — update payout status in DB."""
+    payout_id_stripe = payout.get("id")
+    if not payout_id_stripe:
+        return
+
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE marketplace_payouts SET status = 'paid', stripe_payout_id = ?, completed_at = CURRENT_TIMESTAMP WHERE stripe_transfer_id = ?",
+            (payout_id_stripe, payout_id_stripe)
+        )
+        conn.commit()
+        logger.info(f"Payout paid: {payout_id_stripe}")
+    except Exception as e:
+        logger.warning(f"payout.paid handler error: {e}")
+    finally:
+        conn.close()
 
 
 # Initialize on import

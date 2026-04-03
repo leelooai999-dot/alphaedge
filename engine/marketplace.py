@@ -43,6 +43,19 @@ def init_marketplace_db():
     """Create marketplace tables if they don't exist."""
     conn = _db()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS marketplace_payouts (
+            id TEXT PRIMARY KEY,
+            creator_id TEXT NOT NULL,
+            amount_cents INTEGER NOT NULL,
+            stripe_transfer_id TEXT DEFAULT '',
+            stripe_payout_id TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW(),
+            completed_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_payouts_creator ON marketplace_payouts(creator_id);
+
         CREATE TABLE IF NOT EXISTS marketplace_listings (
             id TEXT PRIMARY KEY,
             creator_id TEXT NOT NULL,
@@ -483,10 +496,10 @@ def create_purchase(listing_id: str, buyer_id: str) -> dict:
         try:
             import stripe
             stripe.api_key = STRIPE_SECRET
-            
-            session = stripe.checkout.Session.create(
-                payment_method_types=["card"],
-                line_items=[{
+
+            session_params = {
+                "payment_method_types": ["card"],
+                "line_items": [{
                     "price_data": {
                         "currency": "usd",
                         "product_data": {
@@ -497,16 +510,33 @@ def create_purchase(listing_id: str, buyer_id: str) -> dict:
                     },
                     "quantity": 1,
                 }],
-                mode="payment",
-                success_url=f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}?purchased=true",
-                cancel_url=f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}",
-                metadata={
+                "mode": "payment",
+                "success_url": f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}?purchased=true",
+                "cancel_url": f"{os.environ.get('FRONTEND_URL', 'https://montecarloo.com')}/marketplace/{listing_id}",
+                "metadata": {
                     "purchase_id": purchase_id,
                     "listing_id": listing_id,
                     "buyer_id": buyer_id,
                     "creator_id": listing["creator_id"],
                 },
-            )
+            }
+
+            # If creator has a connected Stripe account, split the payment
+            creator_profile = conn.execute(
+                "SELECT stripe_connected_account_id FROM creator_profiles WHERE user_id = ?",
+                (listing["creator_id"],)
+            ).fetchone()
+
+            if creator_profile and creator_profile["stripe_connected_account_id"]:
+                connected_account_id = creator_profile["stripe_connected_account_id"]
+                session_params["payment_intent_data"] = {
+                    "application_fee_amount": commission,  # 30% to platform
+                    "transfer_data": {
+                        "destination": connected_account_id,  # 70% to creator
+                    },
+                }
+
+            session = stripe.checkout.Session.create(**session_params)
             checkout_url = session.url
             session_id = session.id
         except Exception as e:
@@ -703,9 +733,13 @@ def get_creator_dashboard(user_id: str) -> dict:
         LIMIT 20
     """, (user_id,)).fetchall()
     
-    # Monthly revenue
-    monthly = conn.execute("""
-        SELECT strftime('%Y-%m', p.created_at) as month, 
+    # Monthly revenue — use Postgres-compatible date formatting when needed
+    if USE_POSTGRES:
+        month_expr = "to_char(p.created_at, 'YYYY-MM')"
+    else:
+        month_expr = "strftime('%Y-%m', p.created_at)"
+    monthly = conn.execute(f"""
+        SELECT {month_expr} as month,
                SUM(p.creator_payout_cents) as revenue,
                COUNT(*) as sales
         FROM marketplace_purchases p
@@ -998,6 +1032,149 @@ def rescan_file(file_id: str) -> Optional[dict]:
     conn.close()
     
     return scan_result.to_dict()
+
+
+# ---------- Stripe Connect ----------
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://montecarloo.com")
+
+
+def create_connect_account(user_id: str, email: str) -> dict:
+    """Create a Stripe Connect Express account for a creator."""
+    if not STRIPE_SECRET:
+        raise ValueError("Stripe not configured")
+
+    conn = _db()
+    try:
+        profile = conn.execute(
+            "SELECT stripe_connected_account_id FROM creator_profiles WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+
+        if profile and profile["stripe_connected_account_id"]:
+            return {"account_id": profile["stripe_connected_account_id"], "existing": True}
+
+        import stripe
+        stripe.api_key = STRIPE_SECRET
+
+        account = stripe.Account.create(
+            type="express",
+            email=email,
+            capabilities={
+                "transfers": {"requested": True},
+            },
+            business_type="individual",
+            metadata={"user_id": user_id},
+        )
+
+        conn.execute(
+            "UPDATE creator_profiles SET stripe_connected_account_id = ? WHERE user_id = ?",
+            (account.id, user_id)
+        )
+        conn.commit()
+        return {"account_id": account.id, "existing": False}
+    finally:
+        conn.close()
+
+
+def create_connect_onboarding_link(user_id: str) -> dict:
+    """Create a Stripe Account Link for creator onboarding."""
+    if not STRIPE_SECRET:
+        raise ValueError("Stripe not configured")
+
+    conn = _db()
+    try:
+        profile = conn.execute(
+            "SELECT stripe_connected_account_id FROM creator_profiles WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+
+        if not profile or not profile["stripe_connected_account_id"]:
+            raise ValueError("No connected account. Call create_connect_account first.")
+
+        import stripe
+        stripe.api_key = STRIPE_SECRET
+
+        account_link = stripe.AccountLink.create(
+            account=profile["stripe_connected_account_id"],
+            refresh_url=f"{FRONTEND_URL}/marketplace/dashboard?connect=refresh",
+            return_url=f"{FRONTEND_URL}/marketplace/dashboard?connect=complete",
+            type="account_onboarding",
+        )
+        return {"url": account_link.url}
+    finally:
+        conn.close()
+
+
+def create_connect_login_link(user_id: str) -> dict:
+    """Create a Stripe Express dashboard login link for a creator."""
+    if not STRIPE_SECRET:
+        raise ValueError("Stripe not configured")
+
+    conn = _db()
+    try:
+        profile = conn.execute(
+            "SELECT stripe_connected_account_id FROM creator_profiles WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+
+        if not profile or not profile["stripe_connected_account_id"]:
+            raise ValueError("No connected Stripe account")
+
+        import stripe
+        stripe.api_key = STRIPE_SECRET
+
+        login_link = stripe.Account.create_login_link(profile["stripe_connected_account_id"])
+        return {"url": login_link.url}
+    finally:
+        conn.close()
+
+
+def get_connect_account_status(user_id: str) -> dict:
+    """Check if a creator's Stripe account is fully onboarded."""
+    conn = _db()
+    try:
+        profile = conn.execute(
+            "SELECT stripe_connected_account_id FROM creator_profiles WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+
+        if not profile or not profile["stripe_connected_account_id"]:
+            return {
+                "connected": False,
+                "account_id": None,
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+            }
+
+        if not STRIPE_SECRET:
+            return {
+                "connected": True,
+                "account_id": profile["stripe_connected_account_id"],
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+            }
+
+        import stripe
+        stripe.api_key = STRIPE_SECRET
+
+        account = stripe.Account.retrieve(profile["stripe_connected_account_id"])
+        return {
+            "connected": True,
+            "account_id": account.id,
+            "charges_enabled": account.charges_enabled,
+            "payouts_enabled": account.payouts_enabled,
+            "details_submitted": account.details_submitted,
+            "requirements": {
+                "currently_due": list(account.requirements.currently_due or []),
+                "eventually_due": list(account.requirements.eventually_due or []),
+                "disabled_reason": account.requirements.disabled_reason,
+            } if account.requirements else {},
+        }
+    finally:
+        conn.close()
 
 
 # ---------- Seed Data ----------

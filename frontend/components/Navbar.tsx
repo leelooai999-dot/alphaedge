@@ -131,6 +131,12 @@ export default function Navbar() {
               🎭 Debate
             </Link>
             <Link
+              href="/flow"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              🐋 Whale Flow
+            </Link>
+            <Link
               href="/marketplace"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
@@ -262,6 +268,13 @@ export default function Navbar() {
               onClick={() => setOpen(false)}
             >
               🎭 Debate
+            </Link>
+            <Link
+              href="/flow"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              🐋 Whale Flow
             </Link>
             <Link
               href="/marketplace"
