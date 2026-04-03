@@ -1863,6 +1863,11 @@ def marketplace_creator_dashboard(authorization: Optional[str] = Header(None)):
     dashboard = marketplace.get_creator_dashboard(user["user_id"])
     if "error" in dashboard:
         raise HTTPException(404, dashboard["error"])
+    # Add computed fields expected by frontend
+    listings = dashboard.get("listings", [])
+    dashboard["total_listings"] = len(listings)
+    ratings = [l.get("avg_rating", 0) for l in listings if l.get("avg_rating", 0) > 0]
+    dashboard["avg_rating"] = round(sum(ratings) / len(ratings), 1) if ratings else 0
     return dashboard
 
 

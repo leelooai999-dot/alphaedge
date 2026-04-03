@@ -435,11 +435,19 @@ function DashboardContent() {
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-mono font-semibold text-white">
-                          ${((listing.price_cents * listing.sales_count * 0.7) / 100).toFixed(0)}
-                        </p>
-                        <p className="text-xs text-muted">earned</p>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-sm font-mono font-semibold text-white">
+                            ${((listing.price_cents * listing.sales_count * 0.7) / 100).toFixed(0)}
+                          </p>
+                          <p className="text-xs text-muted">earned</p>
+                        </div>
+                        <Link
+                          href={`/marketplace/${listing.id}/edit`}
+                          className="px-3 py-1.5 text-xs font-medium text-muted border border-border rounded-lg hover:text-white hover:border-accent transition-colors no-underline"
+                        >
+                          Edit
+                        </Link>
                       </div>
                     </div>
                   ))}
