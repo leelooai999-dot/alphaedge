@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import PostHogProvider from "@/components/PostHogProvider";
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 export const metadata: Metadata = {
   title: "MonteCarloo — What If the World Changes? Simulate Your Stocks.",
@@ -51,7 +53,10 @@ export default function RootLayout({
 
       </head>
       <body className="bg-bg text-gray-200 min-h-screen antialiased">
-        {children}
+        <PostHogProvider>
+          {children}
+          <FeedbackWidget />
+        </PostHogProvider>
       </body>
     </html>
   );

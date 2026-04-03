@@ -2732,6 +2732,100 @@ def trigger_whale_scan(
     return {"status": "ok", "trades_found": count}
 
 
+# ---------------------------------------------------------------------------
+# Feedback
+# ---------------------------------------------------------------------------
+
+@app.post("/api/feedback")
+def submit_feedback(
+    request_body: dict,
+    authorization: Optional[str] = Header(None),
+):
+    """Save user feedback (bug reports, ideas, etc.)."""
+    from db import get_db
+    import secrets
+
+    # Optional auth — anonymous feedback is fine
+    user_id = None
+    if authorization:
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        import auth
+        user = auth.get_user_by_token(token)
+        if user:
+            user_id = user["user_id"]
+
+    feedback_type = request_body.get("type", "other")
+    message = request_body.get("message", "").strip()
+    email = request_body.get("email", "").strip()
+    page = request_body.get("page", "")
+    user_agent = request_body.get("userAgent", "")
+    screen_width = request_body.get("screenWidth", 0)
+
+    if not message:
+        raise HTTPException(400, "Message is required")
+
+    conn = get_db()
+    try:
+        # Create table if not exists
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                type TEXT NOT NULL DEFAULT 'other',
+                message TEXT NOT NULL,
+                email TEXT DEFAULT '',
+                page TEXT DEFAULT '',
+                user_agent TEXT DEFAULT '',
+                screen_width INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'new',
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)
+        """)
+
+        feedback_id = secrets.token_urlsafe(12)
+        conn.execute("""
+            INSERT INTO feedback (id, user_id, type, message, email, page, user_agent, screen_width)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (feedback_id, user_id, feedback_type, message, email, page, user_agent, screen_width))
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info(f"Feedback received: type={feedback_type} page={page} user={user_id or 'anon'}")
+    return {"id": feedback_id, "status": "received"}
+
+
+@app.get("/api/feedback")
+def list_feedback(
+    status: str = "new",
+    limit: int = 50,
+    authorization: Optional[str] = Header(None),
+):
+    """List feedback entries (for internal review)."""
+    from db import get_db
+
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT f.*, u.display_name as user_name
+            FROM feedback f
+            LEFT JOIN users u ON f.user_id = u.id
+            WHERE f.status = ?
+            ORDER BY f.created_at DESC
+            LIMIT ?
+        """, (status, limit)).fetchall()
+
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

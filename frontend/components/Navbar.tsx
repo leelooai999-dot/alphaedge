@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import AuthModal, { AuthUser } from "./AuthModal";
 import NotificationBell from "./NotificationBell";
+import { identifyUser, resetUser } from "./PostHogProvider";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -80,6 +81,7 @@ export default function Navbar() {
     }
     localStorage.removeItem("alphaedge_token");
     localStorage.removeItem("alphaedge_user");
+    resetUser();
     setUser(null);
     setShowUserMenu(false);
   };
@@ -350,7 +352,7 @@ export default function Navbar() {
       {showAuth && (
         <AuthModal
           onClose={() => setShowAuth(false)}
-          onAuth={(u) => { setUser(u); setShowAuth(false); refreshPoints(u); }}
+          onAuth={(u) => { setUser(u); setShowAuth(false); refreshPoints(u); identifyUser(u.id, { name: u.display_name, email: u.email }); }}
         />
       )}
     </nav>
