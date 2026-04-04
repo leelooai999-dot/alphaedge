@@ -57,6 +57,7 @@ def _send_resend(to: str, subject: str, html: str) -> bool:
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                "User-Agent": "MonteCarloo/1.0",
             },
             method="POST",
         )
