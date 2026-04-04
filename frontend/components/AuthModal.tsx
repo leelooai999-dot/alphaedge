@@ -55,13 +55,8 @@ export default function AuthModal({ onClose, onAuth }: Props) {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (data.reset_token) {
-        setResetToken(data.reset_token);
-        setMode("reset");
-        setSuccessMsg("Reset token generated. Enter your new password below.");
-      } else {
-        setSuccessMsg("If that email exists, check for a reset link.");
-      }
+      // Always show "check your email" — never reveal if email exists
+      setSuccessMsg("If that email is registered, you'll receive a reset link shortly. Check your inbox (and spam folder).");
     } catch (e: any) {
       setError(e.message || "Network error");
     }

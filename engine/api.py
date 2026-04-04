@@ -876,16 +876,19 @@ def change_password(request_body: dict, authorization: Optional[str] = Header(No
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(request_body: dict):
-    """Request a password reset. Returns a reset token directly (no email required for now)."""
+    """Request a password reset. Sends reset link via email."""
     email = request_body.get("email", "")
     if not email:
         raise HTTPException(400, "Email is required")
     import auth
+    import emailer
     token = auth.create_reset_token(email)
-    if not token:
-        # Don't reveal whether email exists — always return success
-        return {"status": "ok", "message": "If that email exists, a reset link has been generated."}
-    return {"status": "ok", "reset_token": token, "message": "Use this token to reset your password. Valid for 1 hour."}
+    if token:
+        sent = emailer.send_password_reset(email, token)
+        if not sent:
+            logger.warning(f"Failed to send reset email to {email}")
+    # Always return same response — don't reveal whether email exists
+    return {"status": "ok", "message": "If that email is registered, you'll receive a reset link shortly."}
 
 
 @app.post("/api/auth/reset-password")
