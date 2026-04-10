@@ -10,7 +10,8 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import CommodityChain from "@/components/CommodityChain";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds, loadBridgeScenario } from "@/lib/api";
+import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds, loadBridgeScenario, getTimesfmForecast } from "@/lib/api";
+import { fetchBillingTier } from "@/lib/billing";
 import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
 import UpgradeModal from "@/components/UpgradeModal";
@@ -37,6 +38,13 @@ export default function SimulatorPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
   const [pineResult, setPineResult] = useState<PineResult | null>(null);
+  const [timesfmBaseline, setTimesfmBaseline] = useState<{
+    available: boolean;
+    mode?: string;
+    dates: string[];
+    values: number[];
+    message?: string;
+  } | null>(null);
 
   // Tier limits
   const [userTier, setUserTier] = useState<string>("free");
@@ -54,12 +62,7 @@ export default function SimulatorPage() {
 
   // Load tier limits
   useEffect(() => {
-    const token = localStorage.getItem("alphaedge_token");
-    const url = `${API_BASE}/api/billing/tier${token ? "" : ""}`;
-    fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => r.json())
+    fetchBillingTier()
       .then((d) => {
         const tier = d.tier || "free";
         setUserTier(tier);
@@ -68,7 +71,6 @@ export default function SimulatorPage() {
         setMaxPineOverlays(limits.max_pine_overlays || 1);
       })
       .catch(() => {
-        // Default to free limits
         setMaxEvents(2);
         setMaxPineOverlays(1);
       });
@@ -115,6 +117,39 @@ export default function SimulatorPage() {
     return map[range] || 90;
   };
 
+  const forecastDaysForRange = (range: TimeRange): number => {
+    const map: Record<TimeRange, number> = { "7d": 7, "15d": 15, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "365d": 365 };
+    return map[range] || 30;
+  };
+
+  const parseAnchorDate = (anchor?: Date | string): Date => {
+    if (!anchor) return new Date();
+    if (anchor instanceof Date) return new Date(anchor);
+    const iso = anchor.includes("T") ? anchor : `${anchor}T00:00:00Z`;
+    const parsed = new Date(iso);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  const buildForecastDates = (days: number, anchor?: Date | string): string[] => {
+    const dates: string[] = [];
+    const base = parseAnchorDate(anchor);
+    for (let i = 0; i <= days; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().split("T")[0]);
+    }
+    return dates;
+  };
+
+  const buildEventDate = (durationDays: number, horizonDays: number, anchor?: Date | string): string => {
+    const base = parseAnchorDate(anchor);
+    const clampedHorizon = Math.max(1, horizonDays);
+    const offset = Math.min(clampedHorizon, Math.max(1, Math.round(durationDays * 0.5)));
+    const d = new Date(base);
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().split("T")[0];
+  };
+
   // Load stock data and historical prices
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +194,39 @@ export default function SimulatorPage() {
             sector: data.sector,
           };
           setStock(newStock);
+
+          if (history?.prices?.length) {
+            const horizon = forecastDaysForRange(timeRange);
+            const forecast = await getTimesfmForecast(history.prices, horizon);
+            if (!cancelled && forecast) {
+              const historyAnchorPrice = history?.prices?.[history.prices.length - 1];
+              const anchorDate = history?.dates?.[history.dates.length - 1];
+              const responseHorizon = typeof forecast.horizon === "number" ? forecast.horizon : horizon;
+              const pointCount = forecast.point?.length || 0;
+              const baselineHorizon = pointCount > 0
+                ? Math.min(horizon, responseHorizon, pointCount)
+                : 0;
+              const dates = baselineHorizon > 0 ? buildForecastDates(baselineHorizon, anchorDate) : [];
+              const baselineStart = typeof historyAnchorPrice === "number"
+                ? historyAnchorPrice
+                : data.current_price;
+              const baselineValues = baselineHorizon > 0
+                ? [baselineStart, ...forecast.point!.slice(0, baselineHorizon)]
+                : [];
+              const mode = forecast.mode ?? (forecast.available ? "timesfm" : "unavailable");
+              setTimesfmBaseline({
+                available: mode !== "unavailable" && baselineValues.length > 0,
+                mode,
+                dates,
+                values: baselineValues,
+                message: forecast.message,
+              });
+            } else if (!cancelled && forecast === null) {
+              setTimesfmBaseline(null);
+            }
+          } else if (!cancelled) {
+            setTimesfmBaseline(null);
+          }
 
           // Populate related events from API, using live Polymarket odds when available
           if (data.related_events && data.related_events.length > 0) {
@@ -215,6 +283,7 @@ export default function SimulatorPage() {
           sector: "Unknown",
         });
       }
+      setTimesfmBaseline(null);
 
       // Mock default events
       const defaults: Record<string, string[]> = {
@@ -256,7 +325,14 @@ export default function SimulatorPage() {
       const seq = ++simSeqRef.current;
       setLoading(true);
 
+      const days = forecastDaysForRange(timeRange);
+      const anchorDate = stock.historicalPrices.length > 0
+        ? stock.historicalPrices[stock.historicalPrices.length - 1].date
+        : undefined;
+      const dates = buildForecastDates(days, anchorDate);
+
       const apiEvents = events.map((e) => {
+        const eventDate = buildEventDate(e.duration, days, anchorDate);
         const backendEvent: Record<string, any> = {
           id: e.id,
           params: {
@@ -264,6 +340,7 @@ export default function SimulatorPage() {
             duration_days: e.duration,
           },
           probability: e.probability / 100,
+          event_date: eventDate,
         };
         if (e.id === "fed_rate_cut" || e.id === "fed_rate_hike") {
           backendEvent.params.basis_points = 50;
@@ -276,16 +353,6 @@ export default function SimulatorPage() {
         }
         return backendEvent;
       });
-
-      const daysMap: Record<TimeRange, number> = { "7d": 7, "15d": 15, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "365d": 365 };
-      const days = daysMap[timeRange] || 30;
-      const dates: string[] = [];
-      const now = new Date();
-      for (let i = 0; i <= days; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() + i);
-        dates.push(d.toISOString().split("T")[0]);
-      }
 
       try {
         const res = await runSimulation(ticker, apiEvents, { fast, horizonDays: days });
@@ -607,7 +674,15 @@ export default function SimulatorPage() {
                   </span>
                 </div>
               )}
-              <SimChart stock={stock} result={result} events={events} timeRange={timeRange} onTimeRangeChange={setTimeRange} pineOverlay={pineResult} />
+              <SimChart
+                stock={stock}
+                result={result}
+                events={events}
+                timeRange={timeRange}
+                onTimeRangeChange={setTimeRange}
+                pineOverlay={pineResult}
+                timesfmBaseline={timesfmBaseline}
+              />
             </div>
             {result && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">

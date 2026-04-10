@@ -27,7 +27,7 @@ const REWARDS: Reward[] = [
   { id: "pro_7d", name: "7 Pro Days", description: "Full Pro features for 1 week", cost: 500, icon: "🌟", available: true },
   { id: "extra_slots", name: "+5 Scenario Slots", description: "Permanently save 5 more scenarios", cost: 200, icon: "📦", available: true },
   { id: "name_color", name: "Custom Name Color", description: "Stand out in comments and leaderboard", cost: 300, icon: "🎨", available: true },
-  { id: "early_access", name: "Early Access Badge", description: "Get new features before everyone else", cost: 1000, icon: "🚀", available: true },
+  { id: "early_access", name: "Early Access Badge", description: "Join the beta queue for selected upcoming features", cost: 1000, icon: "🚀", available: true },
   { id: "pro_30d", name: "1 Month Pro", description: "Full Pro features for 30 days", cost: 2000, icon: "👑", available: true },
   { id: "founding", name: "Founding Member", description: "Permanent badge — first 1000 users only", cost: 5000, icon: "🏛️", available: true },
 ];

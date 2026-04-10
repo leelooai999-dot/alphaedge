@@ -3,38 +3,9 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import { PRICING_FEATURES, type FeatureStatus } from "@/lib/pricingFeatures";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-
-interface TierInfo {
-  name: string;
-  price: number;
-  limits: {
-    max_events_per_scenario: number;
-    max_pine_overlays: number;
-    can_export_pine: boolean;
-    api_access: boolean;
-  };
-}
-
-const FEATURES = [
-  { name: "Monte Carlo Simulations", free: "Unlimited", pro: "Unlimited", premium: "Unlimited" },
-  { name: "Scenarios", free: "Unlimited", pro: "Unlimited", premium: "Unlimited" },
-  { name: "Events per Scenario", free: "2", pro: "Unlimited", premium: "Unlimited", highlight: true },
-  { name: "Pine Script Overlays", free: "1", pro: "Unlimited", premium: "Unlimited", highlight: true },
-  { name: "Pine Script Export", free: "✓", pro: "✓", premium: "✓" },
-  { name: "AI Character Debates", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Commodity Beta Model", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Temporal Event Engine", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Polymarket Live Odds", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Save & Share Scenarios", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Social Features & Feed", free: "✓", pro: "✓", premium: "✓" },
-  { name: "Multi-timeframe Analysis", free: "30d max", pro: "365d", premium: "365d", highlight: true },
-  { name: "Custom Event Templates", free: "—", pro: "—", premium: "✓" },
-  { name: "REST API Access", free: "—", pro: "—", premium: "✓", highlight: true },
-  { name: "Priority Support", free: "—", pro: "Email", premium: "Dedicated" },
-  { name: "White-label Exports", free: "—", pro: "—", premium: "✓" },
-];
 
 export default function PricingPage() {
   return (
@@ -161,7 +132,7 @@ function PricingContent() {
         {success && (
           <div className="mb-8 bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-center">
             <div className="text-green-400 text-lg font-bold mb-1">🎉 Welcome to MonteCarloo {upgradedTier?.charAt(0).toUpperCase()}{upgradedTier?.slice(1)}!</div>
-            <div className="text-green-300/80 text-sm">Your account has been upgraded. Enjoy unlimited events and Pine overlays.</div>
+            <div className="text-green-300/80 text-sm">Your account has been upgraded. Your new limits should be available shortly.</div>
           </div>
         )}
         {canceled && (
@@ -176,7 +147,7 @@ function PricingContent() {
             Simple, transparent pricing
           </h1>
           <p className="text-muted text-base sm:text-lg max-w-2xl mx-auto">
-            MonteCarloo is free forever. Upgrade for unlimited events per scenario and unlimited Pine Script overlays.
+            MonteCarloo is free forever. Upgrade for higher limits today, and see clearly which advanced features are live, in beta, or coming soon.
           </p>
         </div>
 
@@ -229,9 +200,9 @@ function PricingContent() {
               <Feature text="Everything in Free" />
               <Feature text="Unlimited events per scenario" highlight />
               <Feature text="Unlimited Pine Script overlays" highlight />
-              <Feature text="Multi-timeframe analysis" />
-              <Feature text="Advanced event templates" />
-              <Feature text="Priority simulation queue" />
+              <Feature text="Multi-timeframe analysis" status="beta" />
+              <Feature text="Advanced event templates" status="coming_soon" />
+              <Feature text="Priority simulation queue" status="coming_soon" />
             </ul>
             {userTier === "pro" ? (
               <button
@@ -255,7 +226,7 @@ function PricingContent() {
                     </svg>
                     Redirecting...
                   </span>
-                ) : userTier === "premium" ? "Downgrade to Pro" : "Upgrade to Pro"}
+                ) : userTier === "premium" ? "Switch to Pro" : "Upgrade to Pro"}
               </button>
             )}
           </div>
@@ -269,11 +240,11 @@ function PricingContent() {
             </div>
             <ul className="space-y-2.5 mb-6 flex-1">
               <Feature text="Everything in Pro" />
-              <Feature text="API access" highlight />
-              <Feature text="Priority support" highlight />
-              <Feature text="Custom event templates" />
-              <Feature text="White-label exports" />
-              <Feature text="Early access to features" />
+              <Feature text="API access" highlight status="coming_soon" />
+              <Feature text="Priority support" highlight status="coming_soon" />
+              <Feature text="Custom event templates" status="coming_soon" />
+              <Feature text="White-label exports" status="coming_soon" />
+              <Feature text="Early access to features" status="beta" />
             </ul>
             {userTier === "premium" ? (
               <button
@@ -312,17 +283,16 @@ function PricingContent() {
                 <span className="px-2 py-0.5 bg-accent/10 text-accent text-xs rounded-full font-mono">$499/mo</span>
               </div>
               <p className="text-sm text-muted max-w-lg">
-                REST API access for programmatic simulation. Integrate MonteCarloo into your trading systems,
-                research platforms, or client-facing tools. Includes custom event templates, bulk simulation,
-                webhook delivery, and dedicated support.
+                Enterprise is being shaped for teams that need programmatic simulation, higher limits, and support workflows.
+                Advanced items below are planned unless explicitly marked live elsewhere.
               </p>
               <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted">
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> REST API</span>
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> Bulk sim (100+/min)</span>
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> Custom events</span>
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> Webhook delivery</span>
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> White-label</span>
-                <span className="flex items-center gap-1"><span className="text-accent">✓</span> SLA & support</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> REST API — coming soon</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> Bulk sim — coming soon</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> Custom events — coming soon</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> Webhook delivery — coming soon</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> White-label — coming soon</span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">◌</span> SLA & support — coming soon</span>
               </div>
             </div>
             <a
@@ -369,10 +339,11 @@ function PricingContent() {
                   <th className="text-center text-sm text-muted font-medium px-4 py-3">Free</th>
                   <th className="text-center text-sm text-accent font-medium px-4 py-3">Pro</th>
                   <th className="text-center text-sm text-purple-400 font-medium px-4 py-3">Premium</th>
+                  <th className="text-center text-sm text-accent font-medium px-4 py-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {FEATURES.map((f, i) => (
+                {PRICING_FEATURES.map((f, i) => (
                   <tr key={i} className={`border-b border-border/50 ${f.highlight ? "bg-accent/5" : ""}`}>
                     <td className={`text-sm px-4 py-2.5 ${f.highlight ? "text-white font-medium" : "text-muted"}`}>
                       {f.name}
@@ -383,6 +354,9 @@ function PricingContent() {
                     </td>
                     <td className={`text-center text-sm px-4 py-2.5 ${f.highlight ? "text-purple-400 font-bold" : "text-white"}`}>
                       {f.premium}
+                    </td>
+                    <td className="text-center text-sm px-4 py-2.5">
+                      <StatusBadge status={f.status} />
                     </td>
                   </tr>
                 ))}
@@ -401,11 +375,15 @@ function PricingContent() {
             />
             <FAQ
               q="What do I get with Pro?"
-              a="Pro unlocks unlimited events per scenario (add as many geopolitical, macro, and sector events as you want) and unlimited Pine Script overlays for multi-indicator analysis."
+              a="Pro unlocks unlimited events per scenario and unlimited Pine Script overlays today. Some advanced workflow features shown on this page may still be marked beta or coming soon."
+            />
+            <FAQ
+              q="How do you label beta vs coming soon?"
+              a="Live means available now. Beta means implemented but still evolving. Coming soon means planned or partially built, but not something we want you relying on in production yet."
             />
             <FAQ
               q="Can I cancel anytime?"
-              a="Yes, cancel anytime from the billing portal. You'll keep your Pro features until the end of your billing period."
+              a="Yes, cancel anytime from the billing portal. You'll keep your current paid access until the end of your billing period."
             />
             <FAQ
               q="Do you offer refunds?"
@@ -418,14 +396,30 @@ function PricingContent() {
   );
 }
 
-function Feature({ text, highlight = false }: { text: string; highlight?: boolean }) {
+function Feature({ text, highlight = false, status = "live" }: { text: string; highlight?: boolean; status?: FeatureStatus }) {
+  const iconColor = status === "coming_soon" ? "text-yellow-400" : status === "beta" ? "text-sky-400" : (highlight ? "text-accent" : "text-green-400");
   return (
     <li className="flex items-start gap-2 text-sm">
-      <svg className={`w-4 h-4 mt-0.5 flex-shrink-0 ${highlight ? "text-accent" : "text-green-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
       </svg>
       <span className={highlight ? "text-white font-medium" : "text-muted"}>{text}</span>
+      {status !== "live" && <StatusBadge status={status} compact />}
     </li>
+  );
+}
+
+function StatusBadge({ status, compact = false }: { status: FeatureStatus; compact?: boolean }) {
+  const styles = {
+    live: "bg-green-500/10 text-green-400 border-green-500/20",
+    beta: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+    coming_soon: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  } as const;
+  const label = status === "coming_soon" ? "Coming soon" : status === "beta" ? "Beta" : "Live";
+  return (
+    <span className={`${compact ? "ml-2" : ""} inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium ${styles[status]}`}>
+      {label}
+    </span>
   );
 }
 

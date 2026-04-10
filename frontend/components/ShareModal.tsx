@@ -181,7 +181,7 @@ Made with @MonteCarloo_io`;
         {/* Points hint */}
         <div className="px-5 pb-4">
           <p className="text-[10px] text-muted text-center">
-            🎯 Earn 10 points per share · Points unlock Pro features
+            🎯 Earn 10 points per share · Points can unlock selected rewards and perks
           </p>
         </div>
       </div>

@@ -87,31 +87,37 @@ const features = [
     icon: "⚡",
     title: "Live Polymarket Odds",
     description: "Real-time prediction market data feeds directly into simulations. See what the crowd thinks — then model what happens next.",
+    status: "live",
   },
   {
     icon: "🎛️",
     title: "Interactive Sliders",
     description: "Adjust probability, duration, and severity of any event. Watch Monte Carlo paths reshape in real-time as you play.",
+    status: "live",
   },
   {
     icon: "🗣️",
     title: "AI Character Debates",
-    description: "Watch simulated world leaders and analysts debate your scenario. Chat privately with any character for their take.",
+    description: "Watch simulated world leaders and analysts debate your scenario.",
+    status: "live",
   },
   {
     icon: "📤",
     title: "Export to TradingView",
-    description: "One-click Pine Script export. Paste your simulation as an overlay on any TradingView chart.",
+    description: "Export simulations as Pine Script overlays for TradingView.",
+    status: "live",
   },
   {
     icon: "🏆",
     title: "Track Your Accuracy",
-    description: "Save predictions, compare against reality after 30 days. Climb the leaderboard with your forecasting skill.",
+    description: "Save predictions and compare against reality over time.",
+    status: "live",
   },
   {
     icon: "🆓",
     title: "Free to Start",
     description: "Unlimited simulations, no credit card. Create an account to save scenarios and join the community.",
+    status: "live",
   },
 ];
 
@@ -197,8 +203,8 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-base sm:text-lg text-muted max-w-2xl mx-auto mb-4">
-            Simulate geopolitical events, Fed decisions, and market shocks.
-            Watch AI world leaders debate your scenario. Export to TradingView.
+            Upload a world context or report, let the Pyeces swarm simulate outcomes, then debate agents in Step5.
+            Structured beliefs turn into MonteCarloo chart scenarios you can save, share, and fork.
           </p>
 
           {/* Social proof */}
@@ -235,7 +241,7 @@ export default function LandingPage() {
               🗣️ Watch AI Debates
             </Link>
           </div>
-          <p className="text-xs text-muted/60">No credit card · Unlimited simulations · Export to TradingView</p>
+          <p className="text-xs text-muted/60">No credit card · Unlimited simulations · Honest pricing at /pricing</p>
         </div>
       </section>
 
@@ -347,8 +353,43 @@ export default function LandingPage() {
                 className="bg-card border border-border rounded-2xl p-6 hover:border-accent/20 transition-colors"
               >
                 <div className="text-2xl mb-3">{f.icon}</div>
-                <h3 className="text-sm font-semibold text-white mb-2">{f.title}</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-white">{f.title}</h3>
+                  {f.status !== "live" && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
+                      Coming soon
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted leading-relaxed">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Product Loop */}
+      <section className="py-16 px-4 bg-bg/60">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-xl sm:text-2xl font-bold text-white">The MonteCarloo Loop</h2>
+            <p className="text-sm text-muted mt-2">
+              A single flow that turns world context into shared scenarios — and improves with every outcome.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              { step: "01", title: "Upload world context", desc: "Drop in a report, briefing, or news context to seed the simulation." },
+              { step: "02", title: "Pyeces swarm simulates", desc: "Pyeces agents explore event paths and surface the most plausible futures." },
+              { step: "03", title: "Debate in Step5", desc: "Challenge agents, probe assumptions, and refine beliefs in the Step5 arena." },
+              { step: "04", title: "Beliefs → scenarios", desc: "Structured beliefs are converted into MonteCarloo chart scenarios." },
+              { step: "05", title: "Save, share, fork", desc: "Publish the scenario so others can remix it or trade against it." },
+              { step: "06", title: "Outcomes teach the model", desc: "Real outcomes feed back into future simulations and community priors." },
+            ].map((item) => (
+              <div key={item.step} className="bg-card border border-border rounded-2xl p-6">
+                <div className="text-xs text-accent/70 font-mono mb-3">STEP {item.step}</div>
+                <h3 className="text-sm font-semibold text-white mb-2">{item.title}</h3>
+                <p className="text-xs text-muted leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>

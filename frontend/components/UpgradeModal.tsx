@@ -3,6 +3,7 @@
 import { createPortal } from "react-dom";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getUpgradeCopy } from "@/lib/billing";
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -26,9 +27,7 @@ export default function UpgradeModal({ isOpen, onClose, reason, currentCount, ma
     ? "Want more events?"
     : "Want more Pine overlays?";
 
-  const description = reason === "events"
-    ? `Free accounts can add up to ${maxAllowed} events per scenario. Upgrade to Pro for unlimited events — layer as many geopolitical, macro, and sector events as you want.`
-    : `Free accounts can use ${maxAllowed} Pine Script overlay. Upgrade to Pro for unlimited overlays — stack RSI, MACD, Bollinger Bands, and custom indicators.`;
+  const description = getUpgradeCopy(reason, maxAllowed);
 
   const icon = reason === "events" ? "⚡" : "📊";
 
@@ -81,7 +80,7 @@ export default function UpgradeModal({ isOpen, onClose, reason, currentCount, ma
           }}
           className="w-full py-3 bg-accent text-white font-bold rounded-xl hover:bg-accent/90 transition-colors"
         >
-          Upgrade to Pro — $49/mo
+          See Pro plan →
         </button>
         <button
           onClick={onClose}
