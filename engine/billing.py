@@ -43,6 +43,7 @@ TIER_LIMITS = {
         "can_use_social": True,
         "api_access": False,
         "priority_support": False,
+        "enterprise_features": False,
     },
     "pro": {
         "max_events_per_scenario": 999,
@@ -52,6 +53,7 @@ TIER_LIMITS = {
         "can_use_social": True,
         "api_access": False,
         "priority_support": False,
+        "enterprise_features": False,
     },
     "premium": {
         "max_events_per_scenario": 999,
@@ -61,13 +63,27 @@ TIER_LIMITS = {
         "can_use_social": True,
         "api_access": True,
         "priority_support": True,
+        "enterprise_features": False,
+    },
+    "enterprise": {
+        "max_events_per_scenario": 9999,
+        "max_pine_overlays": 9999,
+        "can_export_pine": True,
+        "can_save_scenarios": True,
+        "can_use_social": True,
+        "api_access": True,
+        "priority_support": True,
+        "enterprise_features": True,
     },
 }
+
+TIER_ORDER = {"free": 0, "pro": 1, "premium": 2, "enterprise": 3}
 
 # Pricing
 PRICING = {
     "pro": {"price": 4900, "name": "Pro", "interval": "month"},
     "premium": {"price": 14900, "name": "Premium", "interval": "month"},
+    "enterprise": {"price": 49900, "name": "Enterprise", "interval": "month"},
 }
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://montecarloo.com")
@@ -173,6 +189,54 @@ def _ensure_stripe_products():
             logger.info(f"Created Stripe product for {tier_key}: {product['id']} / {price['id']}")
         except Exception as e:
             logger.error(f"Failed to create Stripe product for {tier_key}: {e}")
+
+
+def normalize_tier(tier: Optional[str]) -> str:
+    tier = (tier or "free").strip().lower()
+    return tier if tier in TIER_LIMITS else "free"
+
+
+def tier_at_least(current_tier: str, required_tier: str) -> bool:
+    return TIER_ORDER.get(normalize_tier(current_tier), 0) >= TIER_ORDER.get(normalize_tier(required_tier), 0)
+
+
+def compute_entitlements(tier: str, status: str = "active") -> Dict[str, Any]:
+    tier = normalize_tier(tier)
+    base = dict(TIER_LIMITS.get(tier, TIER_LIMITS["free"]))
+    is_active = status in {"active", "trialing"}
+    if not is_active:
+        return dict(TIER_LIMITS["free"])
+    base.update({"tier": tier, "status": status})
+    return base
+
+
+def reconcile_user_subscription(user_id: str) -> Dict[str, Any]:
+    conn = get_db()
+    try:
+        sub = conn.execute(
+            "SELECT tier, status FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+            (user_id,)
+        ).fetchone()
+        if sub:
+            tier = normalize_tier(sub["tier"])
+            status = sub["status"] or "active"
+            effective_tier = tier if status in {"active", "trialing"} else "free"
+        else:
+            tier = "free"
+            status = "inactive"
+            effective_tier = "free"
+
+        conn.execute("UPDATE users SET tier = ? WHERE id = ?", (effective_tier, user_id))
+        conn.commit()
+        return {
+            "user_id": user_id,
+            "tier": effective_tier,
+            "subscription_tier": tier,
+            "status": status,
+            "entitlements": compute_entitlements(effective_tier, "active" if effective_tier != "free" else status),
+        }
+    finally:
+        conn.close()
 
 
 def get_or_create_customer(user_id: str, email: str) -> str:
@@ -384,7 +448,7 @@ def _handle_marketplace_checkout_completed(session: dict):
 def _handle_checkout_completed(session: dict):
     """Handle successful checkout — activate subscription."""
     user_id = session.get("metadata", {}).get("user_id")
-    tier = session.get("metadata", {}).get("tier", "pro")
+    tier = normalize_tier(session.get("metadata", {}).get("tier", "pro"))
     customer_id = session.get("customer")
     subscription_id = session.get("subscription")
 
@@ -414,12 +478,12 @@ def _handle_checkout_completed(session: dict):
                 VALUES (?, ?, ?, 'active', ?, ?)
             """, (secrets.token_urlsafe(16), user_id, tier, customer_id, subscription_id))
 
-        # Update user tier
-        conn.execute("UPDATE users SET tier = ? WHERE id = ?", (tier, user_id))
         conn.commit()
         logger.info(f"User {user_id} upgraded to {tier}")
     finally:
         conn.close()
+
+    reconcile_user_subscription(user_id)
 
 
 def _handle_subscription_updated(subscription: dict):
@@ -432,17 +496,17 @@ def _handle_subscription_updated(subscription: dict):
         return
 
     tier = "free"
-    if status == "active" and not cancel_at_end:
+    if status in {"active", "trialing"} and not cancel_at_end:
         # Determine tier from price
         items = subscription.get("items", {}).get("data", [])
         if items:
             price_id = items[0].get("price", {}).get("id", "")
             for t, prod in STRIPE_PRODUCTS.items():
                 if prod.get("price_id") == price_id:
-                    tier = t
+                    tier = normalize_tier(t)
                     break
         if tier == "free":
-            tier = subscription.get("metadata", {}).get("tier", "pro")
+            tier = normalize_tier(subscription.get("metadata", {}).get("tier", "pro"))
 
     conn = get_db()
     try:
@@ -453,10 +517,11 @@ def _handle_subscription_updated(subscription: dict):
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
         """, (tier, status, 1 if cancel_at_end else 0, user_id))
-        conn.execute("UPDATE users SET tier = ? WHERE id = ?", (tier, user_id))
         conn.commit()
     finally:
         conn.close()
+
+    reconcile_user_subscription(user_id)
 
 
 def _handle_subscription_deleted(subscription: dict):
@@ -473,11 +538,12 @@ def _handle_subscription_deleted(subscription: dict):
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
         """, (user_id,))
-        conn.execute("UPDATE users SET tier = 'free' WHERE id = ?", (user_id,))
         conn.commit()
         logger.info(f"User {user_id} downgraded to free (subscription canceled)")
     finally:
         conn.close()
+
+    reconcile_user_subscription(user_id)
 
 
 def _handle_payment_succeeded(invoice: dict):
@@ -498,6 +564,7 @@ def _handle_payment_succeeded(invoice: dict):
                 (row["user_id"],)
             )
             conn.commit()
+            reconcile_user_subscription(row["user_id"])
     finally:
         conn.close()
 
@@ -521,6 +588,7 @@ def _handle_payment_failed(invoice: dict):
             )
             conn.commit()
             logger.warning(f"Payment failed for user {row['user_id']}")
+            reconcile_user_subscription(row["user_id"])
     finally:
         conn.close()
 
@@ -534,12 +602,8 @@ def get_user_tier(user_id: Optional[str] = None) -> str:
     if not user_id:
         return "free"
 
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT tier FROM users WHERE id = ?", (user_id,)).fetchone()
-        return row["tier"] if row else "free"
-    finally:
-        conn.close()
+    reconciled = reconcile_user_subscription(user_id)
+    return normalize_tier(reconciled.get("tier"))
 
 
 def get_tier_limits(tier: str = "free") -> Dict[str, Any]:

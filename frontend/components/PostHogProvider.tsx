@@ -15,12 +15,50 @@ export default function PostHogProvider({ children }: { children: React.ReactNod
       person_profiles: "identified_only",
       capture_pageview: true,
       capture_pageleave: true,
-      autocapture: true, // auto-capture clicks, inputs, page views
+      autocapture: true,
+      sanitize_properties: (properties) => {
+        const next = { ...(properties || {}) };
+        for (const key of Object.keys(next)) {
+          const lowered = key.toLowerCase();
+          if (
+            lowered.includes("password") ||
+            lowered.includes("token") ||
+            lowered.includes("secret") ||
+            lowered.includes("authorization") ||
+            lowered.includes("email")
+          ) {
+            delete next[key];
+          }
+        }
+        return next;
+      },
       session_recording: {
-        maskAllInputs: false,
+        maskAllInputs: true,
+        blockClass: "ph-no-capture",
+        blockSelector: "[data-sensitive='true']",
         maskInputOptions: {
           password: true,
+          email: true,
         },
+      },
+      loaded: (ph) => {
+        const path = window.location.pathname || "";
+        const isSensitivePath =
+          path.startsWith("/login") ||
+          path.startsWith("/register") ||
+          path.startsWith("/forgot-password") ||
+          path.startsWith("/reset-password") ||
+          path.startsWith("/settings") ||
+          path.startsWith("/billing") ||
+          path.startsWith("/admin") ||
+          path.startsWith("/upgrade") ||
+          path.startsWith("/checkout") ||
+          path.startsWith("/creator");
+
+        if (isSensitivePath) {
+          ph.opt_out_capturing();
+          ph.stopSessionRecording();
+        }
       },
     });
   }, []);

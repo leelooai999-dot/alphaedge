@@ -12,12 +12,72 @@ All data stored in SQLite. Nightly analysis generates proposals.
 import json
 import sqlite3
 import logging
+import html
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from db import get_db
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_WIDGET_CATEGORIES = {"bug", "feature", "event", "general", "ux", "security"}
+ALLOWED_WIDGET_STATUSES = {"new", "reviewed", "triaged", "closed", "spam"}
+_MAX_MESSAGE_LEN = 2000
+_MAX_PAGE_LEN = 300
+_MAX_SESSION_ID_LEN = 128
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_URL_RE = re.compile(r"https?://|javascript:|data:", re.IGNORECASE)
+_SCRIPT_RE = re.compile(r"<\s*/?\s*script\b", re.IGNORECASE)
+
+
+def _clean_text(value: Optional[str], *, max_len: int) -> str:
+    value = (value or "").replace("\x00", "").strip()
+    value = html.escape(value, quote=True)
+    if len(value) > max_len:
+        value = value[:max_len]
+    return value
+
+
+def sanitize_feedback_message(message: Optional[str]) -> str:
+    return _clean_text(message, max_len=_MAX_MESSAGE_LEN)
+
+
+def sanitize_page(page: Optional[str]) -> str:
+    page = _clean_text(page, max_len=_MAX_PAGE_LEN)
+    if page and not page.startswith("/"):
+        return ""
+    return page
+
+
+def sanitize_session_id(session_id: Optional[str]) -> Optional[str]:
+    session_id = _clean_text(session_id, max_len=_MAX_SESSION_ID_LEN)
+    return session_id or None
+
+
+def sanitize_email(email: Optional[str]) -> str:
+    email = (email or "").strip().lower()
+    if not email:
+        return ""
+    if len(email) > 254 or not _EMAIL_RE.match(email):
+        return ""
+    return email
+
+
+def looks_suspicious_feedback(message: str) -> bool:
+    lowered = message.lower()
+    return bool(
+        _SCRIPT_RE.search(message)
+        or _URL_RE.search(message)
+        or "<iframe" in lowered
+        or "onerror=" in lowered
+        or "onload=" in lowered
+    )
+
+
+def normalize_widget_category(category: Optional[str]) -> str:
+    category = _clean_text(category, max_len=32).lower()
+    return category if category in ALLOWED_WIDGET_CATEGORIES else "general"
 
 
 # ---------------------------------------------------------------------------
@@ -132,13 +192,16 @@ def record_survey(
     user_id: Optional[str] = None,
 ) -> bool:
     """Record a micro-survey response."""
+    rating = max(1, min(5, int(rating)))
+    safe_comment = sanitize_feedback_message(comment)
+    safe_trigger_context = _clean_text(trigger_context, max_len=200)
     conn = get_db()
     try:
         conn.execute("""
             INSERT INTO feedback_surveys 
             (session_id, user_id, rating, comment, trigger_context)
             VALUES (?, ?, ?, ?, ?)
-        """, (session_id, user_id, rating, comment, trigger_context))
+        """, (sanitize_session_id(session_id), user_id, rating, safe_comment, safe_trigger_context))
         conn.commit()
         return True
     except Exception as e:
@@ -156,13 +219,20 @@ def record_widget_feedback(
     page: Optional[str] = None,
 ) -> bool:
     """Record a feedback widget submission."""
+    safe_category = normalize_widget_category(category)
+    safe_message = sanitize_feedback_message(message)
+    safe_page = sanitize_page(page)
+    safe_session_id = sanitize_session_id(session_id)
+    if not safe_message:
+        return False
+    status = "spam" if looks_suspicious_feedback(safe_message) else "new"
     conn = get_db()
     try:
         conn.execute("""
             INSERT INTO feedback_widget 
-            (session_id, user_id, category, message, page)
-            VALUES (?, ?, ?, ?, ?)
-        """, (session_id, user_id, category, message, page))
+            (session_id, user_id, category, message, page, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (safe_session_id, user_id, safe_category, safe_message, safe_page, status))
         conn.commit()
         return True
     except Exception as e:
@@ -267,6 +337,8 @@ def get_recent_widget_feedback(
     limit: int = 50,
 ) -> List[Dict]:
     """Get recent widget feedback submissions."""
+    status = status if status in ALLOWED_WIDGET_STATUSES else "new"
+    limit = max(1, min(int(limit), 100))
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -282,6 +354,8 @@ def get_recent_widget_feedback(
 
 def update_widget_status(feedback_id: int, status: str) -> bool:
     """Update the status of a widget feedback entry."""
+    if status not in ALLOWED_WIDGET_STATUSES:
+        return False
     conn = get_db()
     try:
         conn.execute(

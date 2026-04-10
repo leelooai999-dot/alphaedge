@@ -6,12 +6,14 @@ Wraps the Monte Carlo simulation engine with REST endpoints.
 
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 import simulation
 import correlations
 from events import EVENTS, list_all_events, list_categories
 from db import increment_sim_counter, get_stats as get_global_stats, get_db
+from timesfm_service import TimesfmService, TimesfmRequest, TimesfmUnavailableError, DEFAULT_QUANTILES
 import scenarios
 import time
 import os
@@ -23,15 +25,87 @@ import secrets
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MonteCarloo API", version="0.1.0")
+ADMIN_TOKENS = {
+    token.strip() for token in os.environ.get("INTERNAL_API_TOKENS", "").split(",") if token.strip()
+}
+ALLOWED_FEEDBACK_TYPES = {"bug", "feature", "idea", "ux", "security", "other"}
+ALLOWED_FEEDBACK_EVENT_TYPES = {
+    "page_view", "page_exit", "search_no_results", "cta_click", "error", "rage_click"
+}
+_RATE_WINDOW_SECONDS = 300
+_RATE_LIMITS = {
+    "feedback_event": (120, _RATE_WINDOW_SECONDS),
+    "feedback_survey": (10, _RATE_WINDOW_SECONDS),
+    "feedback_widget": (8, _RATE_WINDOW_SECONDS),
+    "feedback_form": (8, _RATE_WINDOW_SECONDS),
+}
+_rate_limit_store: Dict[str, List[float]] = {}
+
+app = FastAPI(
+    title="MonteCarloo API",
+    version="0.1.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+allowed_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+if not allowed_origins:
+    allowed_origins = [
+        "https://frontend-leeloo-ai.vercel.app",
+        "https://montecarloo.com",
+        "https://www.montecarloo.com",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    return response
+
+
+def _client_identifier(request: Request, fallback_session: Optional[str] = None) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client_ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+    return fallback_session or client_ip or "unknown"
+
+
+def _enforce_rate_limit(bucket: str, key: str):
+    limit, window = _RATE_LIMITS[bucket]
+    now = time.time()
+    store_key = f"{bucket}:{key}"
+    hits = [ts for ts in _rate_limit_store.get(store_key, []) if now - ts < window]
+    if len(hits) >= limit:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    hits.append(now)
+    _rate_limit_store[store_key] = hits
+
+
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    return authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+
+
+def _require_internal_admin(authorization: Optional[str]) -> str:
+    token = _extract_bearer_token(authorization)
+    if not token or token not in ADMIN_TOKENS:
+        raise HTTPException(status_code=403, detail="Admin token required")
+    return token
 
 
 # --- TTL Cache ---
@@ -111,6 +185,66 @@ class SimulateResponse(BaseModel):
     commodity_impacts: Optional[Dict[str, float]] = None  # commodity → % change
     stock_betas: Optional[Dict[str, float]] = None        # commodity → beta
     stock_impact_breakdown: Optional[Dict[str, float]] = None  # commodity → stock impact
+
+
+class TimesfmForecastRequest(BaseModel):
+    series: List[float] = Field(..., min_length=1)
+    horizon: int = Field(..., gt=0)
+    quantiles: Optional[List[float]] = None
+    frequency: Optional[str] = None
+
+    @field_validator("quantiles")
+    @classmethod
+    def validate_quantiles(cls, value: Optional[List[float]]):
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("quantiles must contain at least one value")
+        for entry in value:
+            if entry <= 0 or entry >= 1:
+                raise ValueError("quantiles must be between 0 and 1")
+        return value
+
+
+class TimesfmForecastResponse(BaseModel):
+    available: bool
+    horizon: int
+    point: Optional[List[float]] = None
+    quantiles: Optional[Dict[float, List[float]]] = None
+    mode: Optional[str] = None
+    message: Optional[str] = None
+
+
+class TimesfmLiveForecastRequest(BaseModel):
+    ticker: str
+    horizon: int = Field(30, gt=0)
+    lookback: int = Field(90, gt=0)
+    timeframe: str = "1d"
+    quantiles: Optional[List[float]] = None
+
+    @field_validator("quantiles")
+    @classmethod
+    def validate_quantiles(cls, value: Optional[List[float]]):
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("quantiles must contain at least one value")
+        for entry in value:
+            if entry <= 0 or entry >= 1:
+                raise ValueError("quantiles must be between 0 and 1")
+        return value
+
+
+class TimesfmLiveForecastResponse(BaseModel):
+    available: bool
+    ticker: str
+    horizon: int
+    lookback: int
+    history: Dict[str, List]
+    point: Optional[List[float]] = None
+    quantiles: Optional[Dict[float, List[float]]] = None
+    mode: Optional[str] = None
+    message: Optional[str] = None
 
 
 # --- Price Cache (fallback for yfinance rate limits) ---
@@ -307,7 +441,7 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
     interval = valid_timeframes.get(timeframe, "1d")
     cache_key = f"{ticker}_{days}_{interval}_{'ohlcv' if ohlcv else 'close'}"
 
-    cached = historywhale_cache.get(cache_key)
+    cached = history_cache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -346,7 +480,7 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
         else:
             result = {"dates": dates, "prices": prices}
 
-        historywhale_cache.set(cache_key, result)
+        history_cache.set(cache_key, result)
         return result
     except HTTPException:
         raise
@@ -367,9 +501,38 @@ def get_stock_history_endpoint(ticker: str, days: int = 90, ohlcv: bool = False,
                 price = max(price + change + (cached_price - price) * 0.01, cached_price * 0.70)
                 prices.append(round(price, 2))
             result = {"dates": dates, "prices": prices}
-            historywhale_cache.set(cache_key, result)
+            history_cache.set(cache_key, result)
             return result
         raise HTTPException(500, f"Failed to fetch history for {ticker}: {str(e)}")
+
+
+def _fetch_live_history(ticker: str, lookback: int, timeframe: str) -> Dict[str, List]:
+    ticker = ticker.upper()
+    valid_timeframes = {"1h": "1h", "4h": "4h", "1d": "1d", "1wk": "1wk", "1mo": "1mo",
+                        "5m": "5m", "15m": "15m", "30m": "30m", "60m": "1h"}
+    interval = valid_timeframes.get(timeframe, "1d")
+
+    import yfinance as yf
+
+    if interval in ("5m", "15m", "30m"):
+        period = "60d"
+    elif interval in ("1h", "4h"):
+        period = f"{min(lookback, 730)}d" if lookback <= 730 else "730d"
+    else:
+        period_map = {7: "5d", 30: "1mo", 60: "3mo", 90: "3mo", 180: "6mo", 365: "1y"}
+        period = period_map.get(lookback, f"{max(lookback, 1)}d")
+
+    hist = yf.Ticker(ticker).history(period=period, interval=interval)
+    if hist.empty:
+        raise HTTPException(404, f"No price history found for {ticker}")
+
+    if interval == "1d":
+        hist = hist.tail(lookback)
+
+    date_fmt = "%Y-%m-%d" if interval in ("1d", "1wk", "1mo") else "%Y-%m-%dT%H:%M"
+    dates = [d.strftime(date_fmt) for d in hist.index]
+    prices = [round(p, 2) for p in hist["Close"].tolist()]
+    return {"dates": dates, "prices": prices}
 
 
 # Baseline cache: keyed by (ticker, horizon_days) — baseline doesn't change with events
@@ -511,6 +674,79 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
         pass  # Never fail response for cache
 
     return response
+
+
+@app.post("/api/forecast/timesfm", response_model=TimesfmForecastResponse)
+def forecast_timesfm(req: TimesfmForecastRequest):
+    """TimesFM baseline forecast (graceful fallback when unavailable)."""
+    quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
+    request = TimesfmRequest(
+        series=req.series,
+        horizon=req.horizon,
+        quantiles=quantiles,
+        frequency=req.frequency,
+    )
+    service = TimesfmService()
+    try:
+        forecast = service.forecast(request)
+        return TimesfmForecastResponse(
+            available=True,
+            horizon=forecast.horizon,
+            point=forecast.point,
+            quantiles=forecast.quantiles,
+            mode=forecast.mode,
+        )
+    except TimesfmUnavailableError as exc:
+        return TimesfmForecastResponse(
+            available=False,
+            horizon=req.horizon,
+            mode="unavailable",
+            message=str(exc),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/forecast/timesfm/live", response_model=TimesfmLiveForecastResponse)
+def forecast_timesfm_live(req: TimesfmLiveForecastRequest):
+    """TimesFM forecast using live ticker history as input."""
+    ticker = req.ticker.upper()
+    history = _fetch_live_history(ticker, req.lookback, req.timeframe)
+    if not history.get("prices"):
+        raise HTTPException(404, f"No price history found for {ticker}")
+
+    quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
+    request = TimesfmRequest(
+        series=history["prices"],
+        horizon=req.horizon,
+        quantiles=quantiles,
+        frequency=req.timeframe,
+    )
+    service = TimesfmService()
+    try:
+        forecast = service.forecast(request)
+        return TimesfmLiveForecastResponse(
+            available=True,
+            ticker=ticker,
+            horizon=forecast.horizon,
+            lookback=req.lookback,
+            history=history,
+            point=forecast.point,
+            quantiles=forecast.quantiles,
+            mode=forecast.mode,
+        )
+    except TimesfmUnavailableError as exc:
+        return TimesfmLiveForecastResponse(
+            available=False,
+            ticker=ticker,
+            horizon=req.horizon,
+            lookback=req.lookback,
+            history=history,
+            mode="unavailable",
+            message=str(exc),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/categories")
@@ -934,45 +1170,70 @@ def get_earnings_calendar(ticker: str):
 # --- Feedback Endpoints (v5) ---
 
 class FeedbackEvent(BaseModel):
-    session_id: Optional[str] = None
-    event_type: str
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    event_type: str = Field(max_length=64)
     event_data: Optional[Dict[str, Any]] = None
-    page: Optional[str] = None
-    viewport: Optional[str] = None
+    page: Optional[str] = Field(default=None, max_length=300)
+    viewport: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("event_type")
+    @classmethod
+    def validate_event_type(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in ALLOWED_FEEDBACK_EVENT_TYPES:
+            raise ValueError("Unsupported event type")
+        return value
 
 
 class SurveyResponse(BaseModel):
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=128)
     rating: int  # 1-5
-    comment: Optional[str] = None
-    trigger_context: Optional[str] = None
+    comment: Optional[str] = Field(default=None, max_length=2000)
+    trigger_context: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, value: int) -> int:
+        if value < 1 or value > 5:
+            raise ValueError("rating must be between 1 and 5")
+        return value
 
 
 class WidgetFeedback(BaseModel):
-    session_id: Optional[str] = None
-    category: str  # bug, feature, event, general
-    message: str
-    page: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    category: str = Field(max_length=32)  # bug, feature, event, general
+    message: str = Field(max_length=2000)
+    page: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"bug", "feature", "event", "general", "ux", "security"}:
+            raise ValueError("Unsupported category")
+        return value
 
 
 @app.post("/api/feedback/event")
-def submit_feedback_event(req: FeedbackEvent):
+def submit_feedback_event(req: FeedbackEvent, request: Request):
     """Record an implicit behavioral event (fire-and-forget)."""
     import feedback
+    _enforce_rate_limit("feedback_event", _client_identifier(request, req.session_id))
     feedback.record_event(
         event_type=req.event_type,
         event_data=req.event_data,
         session_id=req.session_id,
-        page=req.page,
-        viewport=req.viewport,
+        page=feedback.sanitize_page(req.page),
+        viewport=(req.viewport or "")[:64],
     )
     return {"status": "ok"}
 
 
 @app.post("/api/feedback/survey")
-def submit_survey(req: SurveyResponse):
+def submit_survey(req: SurveyResponse, request: Request):
     """Record a micro-survey response."""
     import feedback
+    _enforce_rate_limit("feedback_survey", _client_identifier(request, req.session_id))
     feedback.record_survey(
         rating=req.rating,
         comment=req.comment,
@@ -983,22 +1244,27 @@ def submit_survey(req: SurveyResponse):
 
 
 @app.post("/api/feedback/widget")
-def submit_widget_feedback(req: WidgetFeedback):
+def submit_widget_feedback(req: WidgetFeedback, request: Request):
     """Record a feedback widget submission."""
     import feedback
-    feedback.record_widget_feedback(
+    _enforce_rate_limit("feedback_widget", _client_identifier(request, req.session_id))
+    ok = feedback.record_widget_feedback(
         category=req.category,
         message=req.message,
         session_id=req.session_id,
         page=req.page,
     )
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid feedback payload")
     return {"status": "ok"}
 
 
 @app.get("/api/feedback/stats")
-def get_feedback_stats(days: int = 7):
+def get_feedback_stats(days: int = 7, authorization: Optional[str] = Header(None)):
     """Get feedback summary (admin endpoint)."""
     import feedback
+    _require_internal_admin(authorization)
+    days = max(1, min(int(days), 30))
     return feedback.get_feedback_stats(days=days)
 
 
@@ -1448,7 +1714,7 @@ def get_user_scenarios(user_id: str, limit: int = 50):
 # --- Billing / Stripe Endpoints ---
 
 class CheckoutRequest(BaseModel):
-    tier: str  # "pro" or "premium"
+    tier: str  # "pro" | "premium" | "enterprise"
 
 
 @app.get("/api/billing/config")
@@ -1473,6 +1739,11 @@ def get_billing_config():
                 "price": 149,
                 "limits": billing.TIER_LIMITS["premium"],
             },
+            "enterprise": {
+                "name": "Enterprise",
+                "price": 499,
+                "limits": billing.TIER_LIMITS["enterprise"],
+            },
         },
     }
 
@@ -1488,9 +1759,11 @@ def get_user_billing_tier(authorization: Optional[str] = Header(None)):
         if user:
             user_id = user["user_id"]
     tier = billing.get_user_tier(user_id)
+    entitlements = billing.compute_entitlements(tier, "active" if tier != "free" else "inactive")
     return {
         "tier": tier,
         "limits": billing.get_tier_limits(tier),
+        "entitlements": entitlements,
     }
 
 
@@ -1529,6 +1802,18 @@ def create_billing_portal(authorization: Optional[str] = Header(None)):
         return billing.create_portal_session(user["user_id"])
     except Exception as e:
         raise HTTPException(500, f"Portal failed: {str(e)}")
+
+
+@app.post("/api/billing/reconcile")
+def reconcile_billing_access(authorization: Optional[str] = Header(None)):
+    """Force a reconciliation of the logged-in user's subscription -> access state."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, billing
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    return billing.reconcile_user_subscription(user["user_id"])
 
 
 @app.post("/api/billing/webhook")
@@ -1582,8 +1867,9 @@ def health():
 
 
 @app.get("/api/cache/stats")
-def cache_stats():
-    """Return Redis cache statistics."""
+def cache_stats(authorization: Optional[str] = Header(None)):
+    """Return Redis cache statistics (internal/admin only)."""
+    _require_internal_admin(authorization)
     try:
         from cache import get_cache_stats
         return get_cache_stats()
@@ -1592,8 +1878,9 @@ def cache_stats():
 
 
 @app.get("/api/llm/stats")
-def llm_stats():
-    """Return LLM routing statistics (OpenAI vs Claude fallback)."""
+def llm_stats(authorization: Optional[str] = Header(None)):
+    """Return LLM routing statistics (internal/admin only)."""
+    _require_internal_admin(authorization)
     try:
         from llm_router import get_router_stats
         return get_router_stats()
@@ -2163,6 +2450,8 @@ class PyecesBridgeRequest(BaseModel):
     consensus: Dict[str, Any]  # direction, probability, magnitude_pct, peak_impact_days, confidence, agent_votes
     agent_predictions: Optional[List[Dict[str, Any]]] = None
     report_summary: Optional[str] = None
+    structured_beliefs: Optional[List[Dict[str, Any]]] = None
+    conversation: Optional[Dict[str, Any]] = None
 
 
 @app.post("/api/bridge/pyeces")
@@ -2172,24 +2461,90 @@ def create_bridge_scenario(req: PyecesBridgeRequest):
     from datetime import datetime
 
     consensus = req.consensus
-    probability = float(consensus.get("probability", 0.5))
-    magnitude = float(consensus.get("magnitude_pct", 5.0))
-    duration = int(consensus.get("peak_impact_days", 14))
-    direction = consensus.get("direction", "bullish")
+
+    def normalize_probability(value: Any) -> float:
+        try:
+            prob = float(value)
+        except (TypeError, ValueError):
+            return 0.5
+        if prob > 1:
+            prob = prob / 100
+        if prob < 0:
+            prob = 0
+        if prob > 1:
+            prob = 1
+        return prob
+
+    def normalize_magnitude(value: Any) -> float:
+        if isinstance(value, (list, tuple)) and value:
+            numbers = [v for v in value if isinstance(v, (int, float))]
+            if len(numbers) >= 2:
+                return (numbers[0] + numbers[1]) / 2
+            if len(numbers) == 1:
+                return float(numbers[0])
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 5.0
+
+    def normalize_duration(value: Any) -> int:
+        try:
+            duration_value = int(value)
+        except (TypeError, ValueError):
+            duration_value = 14
+        if duration_value <= 0:
+            duration_value = 14
+        return duration_value
+
+    def normalize_direction(value: Any) -> str:
+        direction_value = value if isinstance(value, str) else "bullish"
+        if direction_value not in ("bullish", "bearish"):
+            direction_value = "bullish"
+        return direction_value
+
+    def normalize_event_name(name: Any, fallback: str) -> str:
+        resolved = name if isinstance(name, str) and name.strip() else fallback
+        if "pyeces" in resolved.lower():
+            return resolved
+        return f"{resolved} (Pyeces AI)"
+
+    def build_event(payload: Dict[str, Any], event_id: str, fallback_name: str) -> Dict[str, Any]:
+        probability = normalize_probability(payload.get("probability", 0.5))
+        magnitude = normalize_magnitude(payload.get("magnitude_pct", 5.0))
+        duration = normalize_duration(payload.get("peak_impact_days", 14))
+        direction = normalize_direction(payload.get("direction", "bullish"))
+        name = payload.get("event_name") or payload.get("name") or fallback_name
+        resolved_name = normalize_event_name(name, fallback_name)
+        impact = magnitude if direction == "bullish" else -magnitude
+        return {
+            "id": event_id,
+            "name": resolved_name,
+            "probability": probability * 100,  # MonteCarloo uses 0-100
+            "impact": impact,
+            "duration": duration,
+            "params": {
+                "probability": probability,
+                "duration_days": duration,
+                "impact_pct": impact,
+            },
+        }
 
     # Map Pyeces consensus to MonteCarloo event format
-    event = {
-        "id": f"pyeces_{req.simulation_id or 'custom'}",
-        "name": f"{req.event_name} (Pyeces AI)",
-        "probability": probability * 100,  # MonteCarloo uses 0-100
-        "impact": magnitude if direction == "bullish" else -magnitude,
-        "duration": duration,
-        "params": {
-            "probability": probability,
-            "duration_days": duration,
-            "impact_pct": magnitude if direction == "bullish" else -magnitude,
-        },
-    }
+    event = build_event(
+        consensus,
+        f"pyeces_{req.simulation_id or 'custom'}",
+        req.event_name,
+    )
+
+    events = [event]
+
+    for idx, belief in enumerate(req.structured_beliefs or [], start=1):
+        if not isinstance(belief, dict):
+            continue
+        belief_id = belief.get("id") if isinstance(belief.get("id"), str) else None
+        event_id = belief_id or f"pyeces_belief_{req.simulation_id or 'custom'}_{idx}"
+        belief_name = belief.get("event_name") or belief.get("name") or f"Pyeces Belief {idx}"
+        events.append(build_event(belief, event_id, belief_name))
 
     # Generate scenario ID
     alphabet = string.ascii_lowercase + string.digits
@@ -2197,11 +2552,12 @@ def create_bridge_scenario(req: PyecesBridgeRequest):
 
     # Build result summary
     result_summary = {
-        "direction": direction,
-        "probability": probability,
-        "magnitude_pct": magnitude,
+        "direction": normalize_direction(consensus.get("direction", "bullish")),
+        "probability": normalize_probability(consensus.get("probability", 0.5)),
+        "magnitude_pct": normalize_magnitude(consensus.get("magnitude_pct", 5.0)),
         "confidence": consensus.get("confidence", 0),
         "agent_votes": consensus.get("agent_votes", {}),
+        "belief_count": len(req.structured_beliefs or []),
     }
 
     # Store full Pyeces data
@@ -2209,8 +2565,10 @@ def create_bridge_scenario(req: PyecesBridgeRequest):
         "source": req.source,
         "simulation_id": req.simulation_id,
         "consensus": consensus,
+        "structured_beliefs": req.structured_beliefs or [],
         "agent_predictions": req.agent_predictions or [],
         "report_summary": req.report_summary,
+        "conversation": req.conversation or {},
         "created_at": datetime.utcnow().isoformat(),
     }
 
@@ -2228,7 +2586,7 @@ def create_bridge_scenario(req: PyecesBridgeRequest):
                 req.ticker.upper(),
                 title[:200],
                 (req.report_summary or "")[:500],
-                json.dumps([event]),
+                json.dumps(events),
                 json.dumps(result_summary),
                 "Pyeces AI",
                 1,
@@ -2245,7 +2603,7 @@ def create_bridge_scenario(req: PyecesBridgeRequest):
     return {
         "scenario_id": scenario_id,
         "chart_url": chart_url,
-        "events_created": [event],
+        "events_created": events,
     }
 
 
@@ -2729,7 +3087,7 @@ def trigger_whale_scan(
     authorization: Optional[str] = Header(None),
 ):
     """Manually trigger a whale flow scan (admin only)."""
-    # Simple admin check — in production use proper auth
+    _require_internal_admin(authorization)
     import whale_flow
     count = whale_flow.run_full_scan(tickers)
     return {"status": "ok", "trades_found": count}
@@ -2742,30 +3100,46 @@ def trigger_whale_scan(
 @app.post("/api/feedback")
 def submit_feedback(
     request_body: dict,
+    request: Request,
     authorization: Optional[str] = Header(None),
 ):
     """Save user feedback (bug reports, ideas, etc.)."""
     from db import get_db
     import secrets
+    import feedback as feedback_utils
+
+    token = _extract_bearer_token(authorization)
 
     # Optional auth — anonymous feedback is fine
     user_id = None
-    if authorization:
-        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    if token:
         import auth
         user = auth.get_user_by_token(token)
         if user:
             user_id = user["user_id"]
 
-    feedback_type = request_body.get("type", "other")
-    message = request_body.get("message", "").strip()
-    email = request_body.get("email", "").strip()
-    page = request_body.get("page", "")
-    user_agent = request_body.get("userAgent", "")
-    screen_width = request_body.get("screenWidth", 0)
+    session_id = request_body.get("sessionId") or request_body.get("session_id")
+    _enforce_rate_limit("feedback_form", _client_identifier(request, session_id))
+
+    feedback_type = str(request_body.get("type", "other")).strip().lower()
+    if feedback_type not in ALLOWED_FEEDBACK_TYPES:
+        feedback_type = "other"
+
+    message = feedback_utils.sanitize_feedback_message(request_body.get("message", ""))
+    email = feedback_utils.sanitize_email(request_body.get("email", ""))
+    page = feedback_utils.sanitize_page(request_body.get("page", ""))
+    user_agent = (request.headers.get("user-agent") or "")[:255]
+    screen_width_raw = request_body.get("screenWidth", 0)
+    try:
+        screen_width = max(0, min(int(screen_width_raw), 10000))
+    except Exception:
+        screen_width = 0
 
     if not message:
         raise HTTPException(400, "Message is required")
+
+    suspicious = feedback_utils.looks_suspicious_feedback(message)
+    status = "spam" if suspicious else "new"
 
     conn = get_db()
     try:
@@ -2791,14 +3165,14 @@ def submit_feedback(
 
         feedback_id = secrets.token_urlsafe(12)
         conn.execute("""
-            INSERT INTO feedback (id, user_id, type, message, email, page, user_agent, screen_width)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (feedback_id, user_id, feedback_type, message, email, page, user_agent, screen_width))
+            INSERT INTO feedback (id, user_id, type, message, email, page, user_agent, screen_width, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (feedback_id, user_id, feedback_type, message, email, page, user_agent, screen_width, status))
         conn.commit()
     finally:
         conn.close()
 
-    logger.info(f"Feedback received: type={feedback_type} page={page} user={user_id or 'anon'}")
+    logger.info(f"Feedback received: type={feedback_type} page={page} user={user_id or 'anon'} status={status}")
     return {"id": feedback_id, "status": "received"}
 
 
@@ -2811,10 +3185,15 @@ def list_feedback(
     """List feedback entries (for internal review)."""
     from db import get_db
 
+    _require_internal_admin(authorization)
+    status = status if status in {"new", "reviewed", "triaged", "closed", "spam"} else "new"
+    limit = max(1, min(int(limit), 100))
+
     conn = get_db()
     try:
         rows = conn.execute("""
-            SELECT f.*, u.display_name as user_name
+            SELECT f.id, f.user_id, f.type, f.message, f.page, f.screen_width, f.status, f.notes, f.created_at,
+                   u.display_name as user_name
             FROM feedback f
             LEFT JOIN users u ON f.user_id = u.id
             WHERE f.status = ?
