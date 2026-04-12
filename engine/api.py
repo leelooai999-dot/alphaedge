@@ -14,6 +14,7 @@ import correlations
 from events import EVENTS, list_all_events, list_categories
 from db import increment_sim_counter, get_stats as get_global_stats, get_db
 from timesfm_service import TimesfmService, TimesfmRequest, TimesfmUnavailableError, DEFAULT_QUANTILES
+from forecast.providers import BaselineForecastRequest, forecast_with_provider
 import scenarios
 import time
 import os
@@ -213,6 +214,7 @@ class TimesfmForecastResponse(BaseModel):
     quantiles: Optional[Dict[float, List[float]]] = None
     mode: Optional[str] = None
     message: Optional[str] = None
+    provider: Optional[str] = None
 
 
 class TimesfmLiveForecastRequest(BaseModel):
@@ -245,6 +247,48 @@ class TimesfmLiveForecastResponse(BaseModel):
     quantiles: Optional[Dict[float, List[float]]] = None
     mode: Optional[str] = None
     message: Optional[str] = None
+    provider: Optional[str] = None
+
+
+class BaselineForecastRequestModel(BaseModel):
+    series: List[float] = Field(..., min_length=1)
+    horizon: int = Field(..., gt=0)
+    quantiles: Optional[List[float]] = None
+    frequency: Optional[str] = None
+    provider: Optional[str] = None
+
+    @field_validator("quantiles")
+    @classmethod
+    def validate_quantiles(cls, value: Optional[List[float]]):
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("quantiles must contain at least one value")
+        for entry in value:
+            if entry <= 0 or entry >= 1:
+                raise ValueError("quantiles must be between 0 and 1")
+        return value
+
+
+class BaselineLiveForecastRequestModel(BaseModel):
+    ticker: str
+    horizon: int = Field(30, gt=0)
+    lookback: int = Field(90, gt=0)
+    timeframe: str = "1d"
+    quantiles: Optional[List[float]] = None
+    provider: Optional[str] = None
+
+    @field_validator("quantiles")
+    @classmethod
+    def validate_quantiles(cls, value: Optional[List[float]]):
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("quantiles must contain at least one value")
+        for entry in value:
+            if entry <= 0 or entry >= 1:
+                raise ValueError("quantiles must be between 0 and 1")
+        return value
 
 
 # --- Price Cache (fallback for yfinance rate limits) ---
@@ -676,77 +720,118 @@ def run_simulation(req: SimulateRequest, authorization: Optional[str] = Header(N
     return response
 
 
+@app.post("/api/forecast/baseline", response_model=TimesfmForecastResponse)
+def forecast_baseline(req: BaselineForecastRequestModel):
+    """Provider-agnostic baseline forecast endpoint."""
+    quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
+    forecast = forecast_with_provider(
+        BaselineForecastRequest(
+            series=req.series,
+            horizon=req.horizon,
+            quantiles=quantiles,
+            frequency=req.frequency,
+        ),
+        provider=req.provider,
+    )
+    return TimesfmForecastResponse(
+        available=forecast.available,
+        horizon=forecast.horizon,
+        point=forecast.point or None,
+        quantiles=forecast.quantiles or None,
+        mode=forecast.mode,
+        message=forecast.message,
+        provider=forecast.provider,
+    )
+
+
 @app.post("/api/forecast/timesfm", response_model=TimesfmForecastResponse)
 def forecast_timesfm(req: TimesfmForecastRequest):
-    """TimesFM baseline forecast (graceful fallback when unavailable)."""
+    """Compatibility wrapper for TimesFM baseline forecast."""
     quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
-    request = TimesfmRequest(
-        series=req.series,
-        horizon=req.horizon,
-        quantiles=quantiles,
-        frequency=req.frequency,
-    )
-    service = TimesfmService()
-    try:
-        forecast = service.forecast(request)
-        return TimesfmForecastResponse(
-            available=True,
-            horizon=forecast.horizon,
-            point=forecast.point,
-            quantiles=forecast.quantiles,
-            mode=forecast.mode,
-        )
-    except TimesfmUnavailableError as exc:
-        return TimesfmForecastResponse(
-            available=False,
+    forecast = forecast_with_provider(
+        BaselineForecastRequest(
+            series=req.series,
             horizon=req.horizon,
-            mode="unavailable",
-            message=str(exc),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+            quantiles=quantiles,
+            frequency=req.frequency,
+        ),
+        provider="timesfm",
+    )
+    return TimesfmForecastResponse(
+        available=forecast.available,
+        horizon=forecast.horizon,
+        point=forecast.point or None,
+        quantiles=forecast.quantiles or None,
+        mode=forecast.mode,
+        message=forecast.message,
+        provider=forecast.provider,
+    )
 
 
-@app.post("/api/forecast/timesfm/live", response_model=TimesfmLiveForecastResponse)
-def forecast_timesfm_live(req: TimesfmLiveForecastRequest):
-    """TimesFM forecast using live ticker history as input."""
+@app.post("/api/forecast/baseline/live", response_model=TimesfmLiveForecastResponse)
+def forecast_baseline_live(req: BaselineLiveForecastRequestModel):
+    """Provider-agnostic baseline forecast using live ticker history as input."""
     ticker = req.ticker.upper()
     history = _fetch_live_history(ticker, req.lookback, req.timeframe)
     if not history.get("prices"):
         raise HTTPException(404, f"No price history found for {ticker}")
 
     quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
-    request = TimesfmRequest(
-        series=history["prices"],
-        horizon=req.horizon,
-        quantiles=quantiles,
-        frequency=req.timeframe,
-    )
-    service = TimesfmService()
-    try:
-        forecast = service.forecast(request)
-        return TimesfmLiveForecastResponse(
-            available=True,
-            ticker=ticker,
-            horizon=forecast.horizon,
-            lookback=req.lookback,
-            history=history,
-            point=forecast.point,
-            quantiles=forecast.quantiles,
-            mode=forecast.mode,
-        )
-    except TimesfmUnavailableError as exc:
-        return TimesfmLiveForecastResponse(
-            available=False,
-            ticker=ticker,
+    forecast = forecast_with_provider(
+        BaselineForecastRequest(
+            series=history["prices"],
             horizon=req.horizon,
-            lookback=req.lookback,
-            history=history,
-            mode="unavailable",
-            message=str(exc),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+            quantiles=quantiles,
+            frequency=req.timeframe,
+            timestamps=history.get("dates"),
+        ),
+        provider=req.provider,
+    )
+    return TimesfmLiveForecastResponse(
+        available=forecast.available,
+        ticker=ticker,
+        horizon=forecast.horizon,
+        lookback=req.lookback,
+        history=history,
+        point=forecast.point or None,
+        quantiles=forecast.quantiles or None,
+        mode=forecast.mode,
+        message=forecast.message,
+        provider=forecast.provider,
+    )
+
+
+@app.post("/api/forecast/timesfm/live", response_model=TimesfmLiveForecastResponse)
+def forecast_timesfm_live(req: TimesfmLiveForecastRequest):
+    """Compatibility wrapper for TimesFM live forecast."""
+    ticker = req.ticker.upper()
+    history = _fetch_live_history(ticker, req.lookback, req.timeframe)
+    if not history.get("prices"):
+        raise HTTPException(404, f"No price history found for {ticker}")
+
+    quantiles = req.quantiles if req.quantiles is not None else list(DEFAULT_QUANTILES)
+    forecast = forecast_with_provider(
+        BaselineForecastRequest(
+            series=history["prices"],
+            horizon=req.horizon,
+            quantiles=quantiles,
+            frequency=req.timeframe,
+            timestamps=history.get("dates"),
+        ),
+        provider="timesfm",
+    )
+    return TimesfmLiveForecastResponse(
+        available=forecast.available,
+        ticker=ticker,
+        horizon=forecast.horizon,
+        lookback=req.lookback,
+        history=history,
+        point=forecast.point or None,
+        quantiles=forecast.quantiles or None,
+        mode=forecast.mode,
+        message=forecast.message,
+        provider=forecast.provider,
+    )
 
 
 @app.get("/api/categories")
