@@ -41,6 +41,43 @@ export async function getStockOHLCV(
   }
 }
 
+export interface BaselineForecastResponse {
+  available: boolean;
+  horizon: number;
+  point?: number[];
+  quantiles?: Record<string, number[]>;
+  mode?: string;
+  message?: string;
+  provider?: string;
+}
+
+export async function getBaselineForecast(
+  series: number[],
+  horizon: number,
+  quantiles: number[] = [0.1, 0.5, 0.9],
+  provider?: string
+): Promise<BaselineForecastResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/forecast/baseline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ series, horizon, quantiles, provider }),
+    });
+    if (!res.ok) throw new Error("Baseline forecast not available");
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getTimesfmForecast(
+  series: number[],
+  horizon: number,
+  quantiles: number[] = [0.1, 0.5, 0.9]
+): Promise<BaselineForecastResponse | null> {
+  return getBaselineForecast(series, horizon, quantiles, "timesfm");
+}
+
 /** Parallel fetch of stock info + history for initial page load */
 export async function loadTickerPage(ticker: string) {
   const [stockData, historyData] = await Promise.all([

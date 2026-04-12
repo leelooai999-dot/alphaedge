@@ -10,7 +10,7 @@ import ImpactBreakdown from "@/components/ImpactBreakdown";
 import CommodityChain from "@/components/CommodityChain";
 import { ActiveEvent, EVENT_TEMPLATES, StockData, SimulationResult } from "@/lib/events";
 import { MOCK_STOCKS, mockSimulate } from "@/lib/mock";
-import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds, loadBridgeScenario, getTimesfmForecast } from "@/lib/api";
+import { getStock, runSimulation, getStockHistory, getPolymarketLiveOdds, loadBridgeScenario, getBaselineForecast } from "@/lib/api";
 import { fetchBillingTier } from "@/lib/billing";
 import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
@@ -38,9 +38,10 @@ export default function SimulatorPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
   const [pineResult, setPineResult] = useState<PineResult | null>(null);
-  const [timesfmBaseline, setTimesfmBaseline] = useState<{
+  const [baselineForecast, setBaselineForecast] = useState<{
     available: boolean;
     mode?: string;
+    provider?: string;
     dates: string[];
     values: number[];
     message?: string;
@@ -197,7 +198,7 @@ export default function SimulatorPage() {
 
           if (history?.prices?.length) {
             const horizon = forecastDaysForRange(timeRange);
-            const forecast = await getTimesfmForecast(history.prices, horizon);
+            const forecast = await getBaselineForecast(history.prices, horizon);
             if (!cancelled && forecast) {
               const historyAnchorPrice = history?.prices?.[history.prices.length - 1];
               const anchorDate = history?.dates?.[history.dates.length - 1];
@@ -214,18 +215,19 @@ export default function SimulatorPage() {
                 ? [baselineStart, ...forecast.point!.slice(0, baselineHorizon)]
                 : [];
               const mode = forecast.mode ?? (forecast.available ? "timesfm" : "unavailable");
-              setTimesfmBaseline({
+              setBaselineForecast({
                 available: mode !== "unavailable" && baselineValues.length > 0,
                 mode,
+                provider: forecast.provider,
                 dates,
                 values: baselineValues,
                 message: forecast.message,
               });
             } else if (!cancelled && forecast === null) {
-              setTimesfmBaseline(null);
+              setBaselineForecast(null);
             }
           } else if (!cancelled) {
-            setTimesfmBaseline(null);
+            setBaselineForecast(null);
           }
 
           // Populate related events from API, using live Polymarket odds when available
@@ -283,7 +285,7 @@ export default function SimulatorPage() {
           sector: "Unknown",
         });
       }
-      setTimesfmBaseline(null);
+      setBaselineForecast(null);
 
       // Mock default events
       const defaults: Record<string, string[]> = {
@@ -681,7 +683,7 @@ export default function SimulatorPage() {
                 timeRange={timeRange}
                 onTimeRangeChange={setTimeRange}
                 pineOverlay={pineResult}
-                timesfmBaseline={timesfmBaseline}
+                timesfmBaseline={baselineForecast}
               />
             </div>
             {result && (

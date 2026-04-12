@@ -25,6 +25,14 @@ interface PineOverlay {
   meta: { name: string; overlay: boolean };
 }
 
+interface TimesfmBaseline {
+  available: boolean;
+  mode?: string;
+  dates: string[];
+  values: number[];
+  message?: string;
+}
+
 interface Props {
   stock: StockData;
   result: SimulationResult | null;
@@ -32,6 +40,7 @@ interface Props {
   timeRange?: TimeRange;
   onTimeRangeChange?: (range: TimeRange) => void;
   pineOverlay?: PineOverlay | null;
+  timesfmBaseline?: TimesfmBaseline | null;
 }
 
 const TIME_RANGES: { label: string; value: TimeRange; days: number }[] = [
@@ -65,6 +74,7 @@ const COLORS = {
   bullish: "#00d4aa",
   bearish: "#ff4757",
   neutral: "#fbbf24",
+  timesfm: "#38bdf8",
 };
 
 const EVENT_ZONE_COLORS: Record<string, { bg: string; border: string }> = {
@@ -205,14 +215,22 @@ export default function SimChart({
   timeRange = "30d",
   onTimeRangeChange,
   pineOverlay,
+  timesfmBaseline,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any, Time>[]>([]);
   const [chartMode, setChartMode] = useState<ChartMode>("single");
   const [showPineScript, setShowPineScript] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
   const lastSetRangeRef = useRef<string>("");  // tracks which timeRange was last auto-fitted
   const userScrolledRef = useRef(false);  // tracks if user manually scrolled
+  const compareTouchedRef = useRef(false);
+
+  useEffect(() => {
+    if (compareTouchedRef.current) return;
+    setCompareMode(!!timesfmBaseline?.available);
+  }, [timesfmBaseline?.available]);
 
   // Determine if projection is bullish or bearish
   const isBullish = result ? result.median30d >= stock.currentPrice : true;
@@ -412,6 +430,25 @@ export default function SimChart({
       );
     }
 
+    // TimesFM baseline line (compare mode)
+    if (compareMode && timesfmBaseline?.available && timesfmBaseline.values.length > 0) {
+      const baselineSeries = chart.addSeries(LineSeries, {
+        color: COLORS.timesfm,
+        lineWidth: 2,
+        lineStyle: LineStyle.Dotted,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: timesfmBaseline.mode === "fallback" ? "Market baseline (fallback)" : "Market baseline",
+      });
+      seriesRef.current.push(baselineSeries);
+      baselineSeries.setData(
+        timesfmBaseline.dates.map((d, i) => ({
+          time: d as Time,
+          value: timesfmBaseline.values[i],
+        }))
+      );
+    }
+
     // Pine Script indicator overlay
     if (pineOverlay && pineOverlay.plots.length > 0) {
       const histDates = stock.historicalPrices.map((p) => p.date);
@@ -523,7 +560,7 @@ export default function SimChart({
         }
       }
     }
-  }, [stock, result, timeRange, chartMode, pineOverlay]);
+  }, [stock, result, timeRange, chartMode, pineOverlay, compareMode, timesfmBaseline]);
 
   // Event zones
   const eventZones = useMemo(() => {
@@ -602,6 +639,34 @@ export default function SimChart({
               Bands
             </button>
           </div>
+
+          {/* Compare mode toggle */}
+          {timesfmBaseline && (
+            <>
+              <div className="w-px h-5 bg-border" />
+              <button
+                onClick={() => {
+                  compareTouchedRef.current = true;
+                  setCompareMode((prev) => !prev);
+                }}
+                className={`px-1.5 sm:px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-medium transition-colors ${
+                  compareMode
+                    ? "bg-accent/20 text-accent"
+                    : "text-muted hover:text-white hover:bg-bg"
+                }`}
+                disabled={!timesfmBaseline.available}
+                title={
+                  timesfmBaseline.available
+                    ? timesfmBaseline.mode === "fallback"
+                      ? "Compare vs fallback baseline"
+                      : "Compare vs market baseline"
+                    : "Market baseline unavailable"
+                }
+              >
+                Compare
+              </button>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -660,6 +725,16 @@ export default function SimChart({
         </div>
       </div>
 
+      {timesfmBaseline && (
+        <div className="mb-2 text-[10px] sm:text-[11px] text-muted">
+          {timesfmBaseline.available
+            ? timesfmBaseline.mode === "fallback"
+              ? "Baseline forecast uses fallback model (provider unavailable)."
+              : "Baseline forecast uses historical patterns only. Scenario forecast applies your events."
+            : timesfmBaseline.message || "Market baseline unavailable."}
+        </div>
+      )}
+
       {/* Chart container */}
       <div className="relative w-full min-h-[280px] sm:min-h-[350px] md:min-h-[450px]">
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
@@ -696,6 +771,14 @@ export default function SimChart({
                 </>
               )}
             </>
+          )}
+          {compareMode && timesfmBaseline?.available && (
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-4 h-0.5 rounded border-t border-dotted" style={{ borderColor: COLORS.timesfm }} />
+              <span className="text-[#94a3b8]">
+                {timesfmBaseline.mode === "fallback" ? "Market baseline (fallback)" : "Market baseline"}
+              </span>
+            </div>
           )}
         </div>
 
