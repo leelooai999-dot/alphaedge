@@ -27,7 +27,7 @@ export const PRICING_FEATURES: PricingFeature[] = [
   { key: "save_share", name: "Save & Share Scenarios", status: "live", free: "✓", pro: "✓", premium: "✓", enterprise: "✓" },
   { key: "social_feed", name: "Social Features & Feed", status: "live", free: "✓", pro: "✓", premium: "✓", enterprise: "✓" },
   { key: "leaderboard", name: "Leaderboard", status: "live", free: "✓", pro: "✓", premium: "✓", enterprise: "✓" },
-  { key: "multi_timeframe", name: "Multi-timeframe Analysis", status: "beta", notes: "Implemented, but still evolving", free: "30d max", pro: "365d", premium: "365d", enterprise: "365d", highlight: true },
+  { key: "multi_timeframe", name: "Multi-timeframe Analysis", status: "beta", notes: "Implemented and broadly available today, but still evolving and not yet tightly entitlement-gated by plan", free: "Beta", pro: "Beta", premium: "Beta", enterprise: "Beta", highlight: true },
   { key: "custom_templates", name: "Custom Event Templates", status: "coming_soon", notes: "Not yet clearly user-available as a polished feature", free: "—", pro: "Coming soon", premium: "Coming soon", enterprise: "Coming soon" },
   { key: "api_access", name: "REST API Access", status: "coming_soon", notes: "Backend foundations exist, but do not market as fully available until auth/docs/limits are ready", free: "—", pro: "—", premium: "Coming soon", enterprise: "Coming soon", highlight: true },
   { key: "priority_support", name: "Priority Support", status: "coming_soon", notes: "Operational promise not yet backed by a clear support workflow", free: "—", pro: "Coming soon", premium: "Coming soon", enterprise: "Coming soon" },

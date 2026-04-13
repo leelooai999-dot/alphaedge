@@ -32,7 +32,7 @@ Do not hardcode feature claims directly inside `frontend/app/pricing/page.tsx`.
 - leaderboard
 
 ### Safer as beta
-- multi-timeframe analysis
+- multi-timeframe analysis (implemented and reachable, but not tightly entitlement-gated by plan yet)
 - early access program wording
 
 ### Safer as coming soon

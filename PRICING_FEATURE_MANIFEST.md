@@ -16,7 +16,7 @@ For any paid/marketed feature, track these fields before calling it live.
 | Save & Share Scenarios | live | free+ | partial | partial | yes | basic | 2026-04-06 | |
 | Social Features & Feed | live | free+ | partial | partial | yes | basic | 2026-04-06 | |
 | Leaderboard | live | free+ | n/a | n/a | yes | basic | 2026-04-06 | |
-| Multi-timeframe Analysis | beta | pro+ | no clear dedicated entitlement | unclear | likely yes | limited | 2026-04-06 | Implemented but evolving |
+| Multi-timeframe Analysis | beta | broadly available | no clear dedicated entitlement | no enforced plan gate found | yes | limited | 2026-04-13 | Implemented and reachable in production, but pricing should not imply plan-specific range caps until entitlement gating exists |
 | Custom Event Templates | coming_soon | premium+/enterprise | no clear entitlement | no clear UI path | unclear | no | 2026-04-06 | Do not market as live yet |
 | REST API Access | coming_soon | premium+/enterprise | partial (`api_access`) | no mature product path | unclear | no | 2026-04-06 | Backing exists but product promise not ready |
 | Priority Support | coming_soon | pro/premium/enterprise | partial (`priority_support`) | no operational workflow | no | no | 2026-04-06 | Selling this requires real support ops |
