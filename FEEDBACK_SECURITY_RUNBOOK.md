@@ -13,8 +13,7 @@ Primary risks:
 
 ## Controls Implemented
 ### API
-- `GET /api/feedback` now requires an internal admin token via `Authorization: Bearer <token>`
-- `GET /api/feedback/stats` now requires an internal admin token
+- feedback read/review endpoints are restricted and must not be exposed publicly
 - feedback write endpoints are rate limited in-memory
 - feedback payloads are length-limited and normalized
 - suspicious feedback is auto-tagged as `spam`
@@ -34,12 +33,10 @@ Primary risks:
 - use `data-sensitive="true"` or class `ph-no-capture` on any sensitive UI block
 
 ## Required Environment Variables
-- `INTERNAL_API_TOKENS` = comma-separated review/admin bearer tokens
 - `CORS_ALLOWED_ORIGINS` = comma-separated allowed frontends
 
 Example:
 ```bash
-INTERNAL_API_TOKENS=long-random-token-1,long-random-token-2
 CORS_ALLOWED_ORIGINS=https://frontend-leeloo-ai.vercel.app,https://montecarloo.com,https://www.montecarloo.com
 ```
 
@@ -65,7 +62,7 @@ A UX improvement should require at least two of:
 
 ## Next Hardening Steps
 1. move rate limiting to Redis / edge instead of in-memory
-2. add admin RBAC instead of shared bearer token
+2. add explicit admin RBAC for feedback review surfaces
 3. add CSRF protection if cookie auth is introduced
 4. add WAF rules / bot detection at Cloudflare
 5. exclude admin/internal domains entirely from PostHog capture

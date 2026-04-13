@@ -1532,9 +1532,18 @@ def mark_read(authorization: Optional[str] = Header(None)):
 
 
 @app.post("/api/notifications/{notif_id}/read")
-def mark_single_read(notif_id: int):
-    """Mark a single notification as read."""
-    import social
+def mark_single_read(notif_id: int, authorization: Optional[str] = Header(None)):
+    """Mark a single notification as read for the authenticated user only."""
+    if not authorization:
+        raise HTTPException(401, "Auth required")
+    import auth, social
+    user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
+    if not user:
+        raise HTTPException(401, "Invalid token")
+    notifications = social.get_notifications(user["user_id"], unread_only=False, limit=200)
+    owned_ids = {n.get("id") for n in notifications if isinstance(n, dict)}
+    if notif_id not in owned_ids:
+        raise HTTPException(404, "Notification not found")
     social.mark_single_notification_read(notif_id)
     return {"status": "ok"}
 
@@ -3280,7 +3289,7 @@ def list_feedback(
     from db import get_db
 
     _require_internal_admin(authorization)
-    status = status if status in {"new", "reviewed", "triaged", "closed", "spam"} else "new"
+    status = status if status in {"new", "reviewed", "triaged", "closed", "resolved", "spam"} else "new"
     limit = max(1, min(int(limit), 100))
 
     conn = get_db()
@@ -3298,6 +3307,48 @@ def list_feedback(
         return [dict(r) for r in rows]
     except Exception:
         return []
+    finally:
+        conn.close()
+
+
+@app.patch("/api/feedback/{feedback_id}")
+def update_feedback(
+    feedback_id: str,
+    request_body: dict,
+    authorization: Optional[str] = Header(None),
+):
+    """Update feedback status / notes for internal review workflows."""
+    from db import get_db
+
+    _require_internal_admin(authorization)
+
+    new_status = str(request_body.get("status", "")).strip().lower()
+    notes = str(request_body.get("notes", "")).strip()[:2000]
+    allowed_statuses = {"new", "reviewed", "triaged", "closed", "resolved", "spam"}
+    if new_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid feedback status")
+
+    conn = get_db()
+    try:
+        existing = conn.execute("SELECT id FROM feedback WHERE id = ?", (feedback_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Feedback not found")
+
+        result = conn.execute(
+            "UPDATE feedback SET status = ?, notes = ? WHERE id = ?",
+            (new_status, notes, feedback_id),
+        )
+        conn.commit()
+
+        updated = conn.execute(
+            "SELECT id, status, notes FROM feedback WHERE id = ?",
+            (feedback_id,),
+        ).fetchone()
+
+        return {
+            "ok": bool(getattr(result, "rowcount", 0) or updated),
+            "feedback": dict(updated) if updated else None,
+        }
     finally:
         conn.close()
 
