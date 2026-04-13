@@ -336,6 +336,10 @@ def record_share(
     session_id: Optional[str] = None,
 ) -> bool:
     """Record a share event."""
+    rate_key = f"share:{user_id or session_id or scenario_id}"
+    if not _check_rate_limit(rate_key, max_per_minute=10, max_per_hour=100):
+        raise ValueError("Too many share actions — please slow down")
+
     conn = get_db()
     try:
         conn.execute("""
@@ -361,6 +365,9 @@ def follow_user(follower_id: str, following_id: str) -> bool:
     """Follow a user."""
     if follower_id == following_id:
         return False
+    rate_key = f"follow:{follower_id}"
+    if not _check_rate_limit(rate_key, max_per_minute=20, max_per_hour=200):
+        raise ValueError("Too many follow actions — please slow down")
     conn = get_db()
     try:
         conn.execute("""
@@ -375,6 +382,9 @@ def follow_user(follower_id: str, following_id: str) -> bool:
 
 def unfollow_user(follower_id: str, following_id: str) -> bool:
     """Unfollow a user."""
+    rate_key = f"unfollow:{follower_id}"
+    if not _check_rate_limit(rate_key, max_per_minute=20, max_per_hour=200):
+        raise ValueError("Too many unfollow actions — please slow down")
     conn = get_db()
     try:
         conn.execute(

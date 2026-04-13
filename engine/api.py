@@ -1416,7 +1416,10 @@ def record_share(req: ShareRecord, authorization: Optional[str] = Header(None)):
         user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
         if user:
             user_id = user["user_id"]
-    social.record_share(req.scenario_id, req.platform, user_id, req.session_id)
+    try:
+        social.record_share(req.scenario_id, req.platform, user_id, req.session_id)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
     return {"status": "ok"}
 
 
@@ -1429,7 +1432,10 @@ def follow(req: FollowAction, authorization: Optional[str] = Header(None)):
     user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
     if not user:
         raise HTTPException(401, "Invalid token")
-    social.follow_user(user["user_id"], req.following_id)
+    try:
+        social.follow_user(user["user_id"], req.following_id)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
     return {"status": "followed"}
 
 
@@ -1442,7 +1448,10 @@ def unfollow(following_id: str, authorization: Optional[str] = Header(None)):
     user = auth.get_user_by_token(authorization.replace("Bearer ", ""))
     if not user:
         raise HTTPException(401, "Invalid token")
-    social.unfollow_user(user["user_id"], following_id)
+    try:
+        social.unfollow_user(user["user_id"], following_id)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
     return {"status": "unfollowed"}
 
 
