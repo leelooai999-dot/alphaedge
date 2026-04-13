@@ -23,7 +23,7 @@ const nextConfig = {
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https://alphaedge-api-production.up.railway.app https://api.montecarloo.com https://montecarloo.com https://www.montecarloo.com https://us.i.posthog.com https://*.posthog.com; font-src 'self' data: https:;",
+            value: "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https://api.montecarloo.com https://montecarloo.com https://www.montecarloo.com https://us.i.posthog.com https://*.posthog.com; font-src 'self' data: https:;",
           },
         ],
       },
