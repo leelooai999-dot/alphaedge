@@ -133,12 +133,6 @@ export default function Navbar() {
               🎭 Debate
             </Link>
             <Link
-              href="/flow"
-              className="text-sm text-muted hover:text-white transition-colors no-underline"
-            >
-              🐋 Whale Flow
-            </Link>
-            <Link
               href="/marketplace"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
@@ -279,13 +273,6 @@ export default function Navbar() {
               🎭 Debate
             </Link>
             <Link
-              href="/flow"
-              className="block py-2 text-sm text-muted hover:text-white no-underline"
-              onClick={() => setOpen(false)}
-            >
-              🐋 Whale Flow
-            </Link>
-            <Link
               href="/marketplace"
               className="block py-2 text-sm text-muted hover:text-white no-underline"
               onClick={() => setOpen(false)}
@@ -347,6 +334,16 @@ export default function Navbar() {
           </div>
         </div>
       )}
+
+      <div className="border-t border-border/60 bg-bg/70">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+          <Link href="/terms" className="hover:text-white no-underline">Terms</Link>
+          <Link href="/privacy" className="hover:text-white no-underline">Privacy</Link>
+          <Link href="/refunds" className="hover:text-white no-underline">Refunds</Link>
+          <Link href="/billing" className="hover:text-white no-underline">Billing</Link>
+          <Link href="/disclaimer" className="hover:text-white no-underline">Disclaimer</Link>
+        </div>
+      </div>
 
       {/* Auth modal */}
       {showAuth && (

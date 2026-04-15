@@ -16,7 +16,6 @@ import SaveScenarioModal from "@/components/SaveScenarioModal";
 import PineImport from "@/components/PineImport";
 import UpgradeModal from "@/components/UpgradeModal";
 import PyecesBadge from "@/components/PyecesBadge";
-import WhaleSidebar from "@/components/WhaleSidebar";
 import type { TimeRange } from "@/components/SimChart";
 import type { PineResult, OHLCVData } from "@/lib/pine-import";
 import { getStockOHLCV } from "@/lib/api";
@@ -620,26 +619,6 @@ export default function SimulatorPage() {
               maxEvents={maxEvents}
               onUpgradeNeeded={() => setUpgradeModal({ open: true, reason: "events" })}
             />
-            {/* Whale Flow Sidebar */}
-            <div className="mt-3">
-              <WhaleSidebar
-                ticker={ticker}
-                appliedTradeIds={appliedWhaleIds}
-                onApplyTrades={(ids) => setAppliedWhaleIds(ids)}
-                onRemoveTrade={(id) => setAppliedWhaleIds((prev) => prev.filter((i) => i !== id))}
-                onApplyConsensus={() => {
-                  // Apply all whale trades for this ticker
-                  fetch(`${API_BASE}/api/flow?ticker=${ticker}&limit=100`)
-                    .then((r) => r.json())
-                    .then((data) => {
-                      if (data.trades) {
-                        setAppliedWhaleIds(data.trades.map((t: any) => t.id));
-                      }
-                    })
-                    .catch(() => {});
-                }}
-              />
-            </div>
           </div>
           {/* Chart + stats — shows FIRST on mobile */}
           <div

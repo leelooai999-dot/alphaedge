@@ -144,7 +144,6 @@ history_cache = TTLCache(default_ttl=300)
 feed_cache = TTLCache(default_ttl=60)  # Feed: 1 min
 leaderboard_cache = TTLCache(default_ttl=120)  # Leaderboard: 2 min
 og_cache = TTLCache(default_ttl=600)  # OG images: 10 min
-whale_cache = TTLCache(default_ttl=60)  # Whale flow: 1 min
 
 
 # --- Request/Response Models ---
@@ -2908,11 +2907,6 @@ def init_debate_tables():
         debate_game.init_debate_game_db()
     except Exception as e:
         logger.warning(f"Debate game table init on startup: {e}")
-    try:
-        import whale_flow
-        whale_flow.ensure_whale_table()
-    except Exception as e:
-        logger.warning(f"Whale flow table init on startup: {e}")
 
 
 @app.post("/api/debate/bet")
@@ -3046,154 +3040,6 @@ def _get_user_id(authorization: Optional[str]) -> Optional[str]:
         return user["user_id"] if user else None
     except Exception:
         return None
-
-
-# ---------------------------------------------------------------------------
-# Whale Flow Endpoints
-# ---------------------------------------------------------------------------
-
-@app.get("/api/flow")
-def whale_flow_list(
-    ticker: Optional[str] = None,
-    direction: Optional[str] = None,
-    min_premium: float = 500000,
-    option_type: Optional[str] = None,
-    scan_date: Optional[str] = None,
-    page: int = 1,
-    limit: int = 50,
-):
-    """Get paginated whale options flow (>$500K premium)."""
-    import whale_flow
-    cache_key = f"flow:{ticker}:{direction}:{min_premium}:{option_type}:{scan_date}:{page}:{limit}"
-    cached = whale_cache.get(cache_key)
-    if cached:
-        return cached
-
-    trades, total = whale_flow.get_whale_trades(
-        ticker=ticker, direction=direction, min_premium=min_premium,
-        option_type=option_type, scan_date=scan_date, page=page, limit=limit
-    )
-    result = {
-        "trades": trades,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "pages": (total + limit - 1) // limit if limit > 0 else 0,
-    }
-    whale_cache.set(cache_key, result, ttl=60)
-    return result
-
-
-@app.get("/api/flow/stats")
-def whale_flow_stats(scan_date: Optional[str] = None):
-    """Get aggregate whale flow stats for the day."""
-    import whale_signal
-    cache_key = f"flow_stats:{scan_date}"
-    cached = whale_cache.get(cache_key)
-    if cached:
-        return cached
-    result = whale_signal.get_flow_stats(scan_date)
-    whale_cache.set(cache_key, result, ttl=120)
-    return result
-
-
-@app.get("/api/flow/consensus/{ticker}")
-def whale_consensus(ticker: str, scan_date: Optional[str] = None):
-    """Get whale consensus score for a ticker."""
-    import whale_signal
-    cache_key = f"consensus:{ticker}:{scan_date}"
-    cached = whale_cache.get(cache_key)
-    if cached:
-        return cached
-    result = whale_signal.get_consensus(ticker, scan_date)
-    whale_cache.set(cache_key, result, ttl=60)
-    return result
-
-
-@app.get("/api/flow/{trade_id}")
-def whale_trade_detail(trade_id: int):
-    """Get a single whale trade with AI analysis."""
-    import whale_flow
-    import whale_analysis
-
-    trade = whale_flow.get_trade_by_id(trade_id)
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-
-    # Generate or retrieve cached analysis
-    analysis = whale_analysis.get_or_generate_analysis(trade_id)
-    trade["analysis"] = analysis
-    return trade
-
-
-class WhaleSimRequest(BaseModel):
-    ticker: str
-    trade_ids: List[int] = []
-    events: List[Dict[str, Any]] = []
-    horizon_days: int = 30
-    n_simulations: int = 2000
-    fast: bool = False
-
-
-@app.post("/api/sim/apply-whale")
-def apply_whale_to_sim(req: WhaleSimRequest):
-    """Run simulation with whale trade drift adjustments applied."""
-    import whale_signal
-
-    # Get whale drift adjustment
-    whale_adj = whale_signal.compute_drift_adjustment(
-        trade_ids=req.trade_ids if req.trade_ids else None,
-        ticker=req.ticker if not req.trade_ids else None
-    )
-
-    # Build events list for the simulate() function, injecting whale as an extra drift
-    sim_events = []
-    for ev in req.events:
-        sim_events.append(ev)
-
-    # Add a synthetic "whale_flow" event to carry the drift adjustment
-    if whale_adj["drift_adjustment"] != 0:
-        sim_events.append({
-            "id": "whale_flow_signal",
-            "params": {
-                "severity": abs(whale_adj["whale_score"]),
-                "duration_days": req.horizon_days,
-                "drift_override": whale_adj["drift_adjustment"],
-                "vol_override": whale_adj["vol_multiplier"],
-            },
-            "probability": 1.0,
-        })
-
-    # Use the standard simulate() path
-    n_sims = min(req.n_simulations, 500) if req.fast else req.n_simulations
-    result = simulation.simulate(
-        ticker=req.ticker,
-        events=sim_events,
-        horizon_days=req.horizon_days,
-        n_simulations=n_sims,
-    )
-
-    result_dict = result.to_dict()
-    result_dict["whale_adjustment"] = whale_adj
-
-    # Include sample paths for chart rendering
-    if result.paths_sample:
-        result_dict["paths_sample"] = result.paths_sample
-
-    increment_sim_counter()
-    return result_dict
-
-
-@app.post("/api/flow/scan")
-def trigger_whale_scan(
-    tickers: Optional[List[str]] = None,
-    authorization: Optional[str] = Header(None),
-):
-    """Manually trigger a whale flow scan (admin only)."""
-    _require_internal_admin(authorization)
-    import whale_flow
-    count = whale_flow.run_full_scan(tickers)
-    return {"status": "ok", "trades_found": count}
 
 
 # ---------------------------------------------------------------------------
