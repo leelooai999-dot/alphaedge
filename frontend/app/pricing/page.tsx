@@ -365,6 +365,13 @@ function PricingContent() {
           </div>
         </div>
 
+        <div className="mt-10 bg-card border border-border rounded-2xl p-5 sm:p-6 text-sm text-muted leading-relaxed">
+          <p className="mb-3 text-white font-medium">Billing & legal disclosures</p>
+          <p>
+            Paid plans renew automatically until canceled. By purchasing, you agree to our <a href="/terms" className="text-accent hover:underline">Terms of Service</a>, <a href="/privacy" className="text-accent hover:underline">Privacy Policy</a>, <a href="/billing" className="text-accent hover:underline">Billing & Subscription Terms</a>, <a href="/refunds" className="text-accent hover:underline">Refund & Cancellation Policy</a>, and <a href="/disclaimer" className="text-accent hover:underline">Risk Disclosure & Disclaimer</a>. Payments are processed securely by Stripe.
+          </p>
+        </div>
+
         {/* FAQ */}
         <div className="mt-12 max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold text-white text-center mb-6">FAQ</h2>
