@@ -50,6 +50,11 @@ app = FastAPI(
     openapi_url=None,
 )
 
+if os.environ.get("ENABLE_API_DOCS", "").strip().lower() in {"1", "true", "yes", "on"}:
+    app.docs_url = "/docs"
+    app.redoc_url = "/redoc"
+    app.openapi_url = "/openapi.json"
+
 allowed_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
 allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
 if not allowed_origins:
@@ -76,6 +81,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     return response
 
 
