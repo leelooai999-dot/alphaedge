@@ -23,6 +23,7 @@ import { getStockOHLCV } from "@/lib/api";
 const SimChart = dynamic(() => import("@/components/SimChart"), { ssr: false });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const SHARE_DISCLAIMER = "For educational purpose only. Non-financial advice. Past experience does not guarantee future gain.";
 
 export default function SimulatorPage() {
   const params = useParams();
@@ -491,10 +492,25 @@ export default function SimulatorPage() {
     setShowSaveModal(true);
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     const url = window.location.href;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url);
+    const shareText = `${url}\n\n${SHARE_DISCLAIMER}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${ticker} simulation on MonteCarloo`,
+          text: SHARE_DISCLAIMER,
+          url,
+        });
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareText);
+      }
+    } catch (error) {
+      console.error("Share failed:", error);
     }
   };
 

@@ -7,6 +7,7 @@ import CommentThread from "@/components/CommentThread";
 import { EVENT_TEMPLATES } from "@/lib/events";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const SHARE_DISCLAIMER = "For educational purpose only. Non-financial advice. Past experience does not guarantee future gain.";
 
 export default function ScenarioPage() {
   const params = useParams();
@@ -59,9 +60,25 @@ export default function ScenarioPage() {
     }
   };
 
-  const handleShare = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareText = `${url}\n\n${SHARE_DISCLAIMER}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${scenario?.title || "MonteCarloo scenario"}`,
+          text: SHARE_DISCLAIMER,
+          url,
+        });
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareText);
+      }
+    } catch (error) {
+      console.error("Share failed:", error);
     }
   };
 
@@ -204,7 +221,7 @@ export default function ScenarioPage() {
             📋 Copy Link
           </button>
           <a
-            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${scenario.title} — ${rs?.probProfit || 50}% profit probability 📊`)}&url=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "")}`}
+            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${scenario.title} — ${rs?.probProfit || 50}% profit probability 📊\n\n${SHARE_DISCLAIMER}`)}&url=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "")}`}
             target="_blank"
             className="px-4 py-2.5 border border-border text-muted rounded-lg hover:text-white hover:border-white/20 transition-colors text-sm"
           >
