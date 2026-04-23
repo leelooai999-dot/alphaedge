@@ -1,20 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-
-const POPULAR_TICKERS = [
-  { ticker: "AAPL", name: "Apple Inc." },
-  { ticker: "NVDA", name: "NVIDIA" },
-  { ticker: "TSLA", name: "Tesla" },
-  { ticker: "SPY", name: "S&P 500 ETF" },
-  { ticker: "CVX", name: "Chevron" },
-  { ticker: "MSFT", name: "Microsoft" },
-  { ticker: "AMZN", name: "Amazon" },
-  { ticker: "GOOGL", name: "Alphabet" },
-  { ticker: "META", name: "Meta Platforms" },
-  { ticker: "XOM", name: "ExxonMobil" },
-];
+import { getSupportedTickers, type SupportedTicker } from "@/lib/api";
 
 interface Props {
   currentTicker?: string;
@@ -23,16 +12,36 @@ interface Props {
 export default function StockSearch({ currentTicker }: Props) {
   const [query, setQuery] = useState(currentTicker || "");
   const [focused, setFocused] = useState(false);
+  const [results, setResults] = useState<SupportedTicker[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  const filtered = query.length > 0
-    ? POPULAR_TICKERS.filter(
-        (t) =>
-          t.ticker.toLowerCase().includes(query.toLowerCase()) ||
-          t.name.toLowerCase().includes(query.toLowerCase())
-      )
-    : POPULAR_TICKERS;
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const normalized = query.trim();
+        const data = await getSupportedTickers(normalized || undefined);
+        const sorted = [...data].sort((a, b) => {
+          const q = normalized.toLowerCase();
+          const aTickerStarts = q ? a.ticker.toLowerCase().startsWith(q) : false;
+          const bTickerStarts = q ? b.ticker.toLowerCase().startsWith(q) : false;
+          if (aTickerStarts !== bTickerStarts) return aTickerStarts ? -1 : 1;
+          const aNameStarts = q ? a.name.toLowerCase().startsWith(q) : false;
+          const bNameStarts = q ? b.name.toLowerCase().startsWith(q) : false;
+          if (aNameStarts !== bNameStarts) return aNameStarts ? -1 : 1;
+          return a.ticker.localeCompare(b.ticker);
+        });
+        if (!cancelled) setResults(sorted.slice(0, normalized ? 30 : 40));
+      } catch {
+        if (!cancelled) setResults([]);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
 
   const selectTicker = (ticker: string) => {
     setQuery(ticker);
@@ -62,24 +71,32 @@ export default function StockSearch({ currentTicker }: Props) {
       </div>
 
       {focused && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl max-h-64 overflow-y-auto z-50">
-          {filtered.map((t) => (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl max-h-96 overflow-y-auto z-[70]">
+          {results.map((t) => (
             <button
               key={t.ticker}
               onClick={() => selectTicker(t.ticker)}
               className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-cardHover transition-colors text-left"
             >
-              <span className="font-mono font-semibold text-white text-sm">
-                {t.ticker}
-              </span>
-              <span className="text-xs text-muted">{t.name}</span>
+              <div className="min-w-0">
+                <span className="font-mono font-semibold text-white text-sm block">
+                  {t.ticker}
+                </span>
+                <span className="text-xs text-muted truncate block">{t.name}</span>
+              </div>
+              <span className="text-[10px] text-muted border border-border rounded-full px-2 py-0.5 ml-3 shrink-0">{t.sector}</span>
             </button>
           ))}
-          {filtered.length === 0 && (
+          {results.length === 0 && (
             <div className="px-3 py-4 text-sm text-muted text-center">
               No results for &quot;{query}&quot;
             </div>
           )}
+          <div className="border-t border-border px-3 py-2 bg-bg/40">
+            <Link href="/tickers" className="text-xs text-accent hover:text-accent/80 no-underline">
+              See all tickers in Hyper Dash →
+            </Link>
+          </div>
         </div>
       )}
     </div>

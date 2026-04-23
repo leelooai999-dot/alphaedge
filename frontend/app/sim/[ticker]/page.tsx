@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import StockSearch from "@/components/StockSearch";
@@ -28,6 +28,7 @@ const SHARE_DISCLAIMER = "For educational purpose only. Non-financial advice. Pa
 export default function SimulatorPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const ticker = (params.ticker as string)?.toUpperCase() || "AAPL";
 
   const [events, setEvents] = useState<ActiveEvent[]>([]);
@@ -60,6 +61,7 @@ export default function SimulatorPage() {
   // Whale flow state
   const [appliedWhaleIds, setAppliedWhaleIds] = useState<number[]>([]);
   const [dragOverChart, setDragOverChart] = useState(false);
+  const chartAnchorRef = useRef<HTMLDivElement | null>(null);
 
   // Load tier limits
   useEffect(() => {
@@ -486,6 +488,15 @@ export default function SimulatorPage() {
     runSim(false);
   }, [runSim]);
 
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    if (focus === "chart" && chartAnchorRef.current) {
+      setTimeout(() => {
+        chartAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    }
+  }, [searchParams, ticker]);
+
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   const handleSave = () => {
@@ -523,7 +534,7 @@ export default function SimulatorPage() {
 
   if (!stock) {
     return (
-      <main className="min-h-screen pt-14">
+      <main className="min-h-screen pt-16 pb-16 lg:pb-10">
         <Navbar />
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -549,7 +560,7 @@ export default function SimulatorPage() {
   }
 
   return (
-    <main className="min-h-screen pt-14">
+    <main className="min-h-screen pt-16 pb-16 lg:pb-10">
       <Navbar />
 
       <div className="sticky top-14 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
@@ -661,7 +672,7 @@ export default function SimulatorPage() {
               }
             }}
           >
-            <div className={`bg-card rounded-2xl border p-2 sm:p-4 transition-all ${
+            <div ref={chartAnchorRef} className={`bg-card rounded-2xl border p-2 sm:p-4 transition-all ${
               dragOverChart ? "border-accent border-2 shadow-lg shadow-accent/20" : "border-border"
             }`}>
               {dragOverChart && (

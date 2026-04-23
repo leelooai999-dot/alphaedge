@@ -2,6 +2,19 @@ import { SimulationResult, StockData, ActiveEvent } from "./events";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+export interface SupportedTicker {
+  ticker: string;
+  name: string;
+  sector: string;
+}
+
+export async function getSupportedTickers(query?: string): Promise<SupportedTicker[]> {
+  const params = query ? `?q=${encodeURIComponent(query)}` : "";
+  const res = await fetch(`${API_BASE}/api/stocks${params}`);
+  if (!res.ok) throw new Error("Tickers not found");
+  return res.json();
+}
+
 export async function getStock(ticker: string): Promise<any> {
   const res = await fetch(`${API_BASE}/api/stocks/${ticker}`);
   if (!res.ok) throw new Error("Stock not found");

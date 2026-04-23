@@ -109,6 +109,12 @@ export default function Navbar() {
               Simulator
             </Link>
             <Link
+              href="/tickers"
+              className="text-sm text-muted hover:text-white transition-colors no-underline"
+            >
+              Hyper Dash
+            </Link>
+            <Link
               href="/feed"
               className="text-sm text-muted hover:text-white transition-colors no-underline"
             >
@@ -245,6 +251,13 @@ export default function Navbar() {
               Simulator
             </Link>
             <Link
+              href="/tickers"
+              className="block py-2 text-sm text-muted hover:text-white no-underline"
+              onClick={() => setOpen(false)}
+            >
+              Hyper Dash
+            </Link>
+            <Link
               href="/feed"
               className="block py-2 text-sm text-muted hover:text-white no-underline"
               onClick={() => setOpen(false)}
@@ -335,7 +348,7 @@ export default function Navbar() {
         </div>
       )}
 
-      <div className="border-t border-border/60 bg-bg/70">
+      <div className="border-t border-border/60 bg-bg/70 relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
           <Link href="/terms" className="hover:text-white no-underline">Terms</Link>
           <Link href="/privacy" className="hover:text-white no-underline">Privacy</Link>
