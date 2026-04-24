@@ -160,7 +160,12 @@ export default function StockSearch({ currentTicker }: Props) {
             </div>
           )}
           <div className="border-t border-border px-3 py-2 bg-bg/40 flex items-center justify-between gap-3">
-            <span className="text-[11px] text-muted">Showing {quickResults.length} options</span>
+            <div className="flex flex-col">
+              <span className="text-[11px] text-muted">Showing {quickResults.length} options</span>
+              {query.trim() && (
+                <span className="text-[10px] text-muted/80">Try names like bitcoin, gold, oil, or ethereum too</span>
+              )}
+            </div>
             <Link href="/tickers" className="text-xs text-accent hover:text-accent/80 no-underline whitespace-nowrap">
               See all tickers in Hyper Dash →
             </Link>

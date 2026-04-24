@@ -476,6 +476,27 @@ COMMODITY_FUTURE_SYMBOLS = [
     ("ZW=F", "Wheat Futures", "Commodity Future"),
 ]
 
+ASSET_ALIASES: Dict[str, List[str]] = {
+    "BTC-USD": ["bitcoin", "btc", "btcusd", "btcusd", "btcusdt"],
+    "ETH-USD": ["ethereum", "eth", "ethusd", "ethusdt"],
+    "SOL-USD": ["solana", "sol"],
+    "XRP-USD": ["ripple", "xrp"],
+    "DOGE-USD": ["dogecoin", "doge"],
+    "GLD": ["gold", "xau", "xauusd", "gold etf"],
+    "GC=F": ["gold futures", "gold contract", "gc"],
+    "SLV": ["silver", "xag", "xagusd", "silver etf"],
+    "SI=F": ["silver futures", "si"],
+    "USO": ["oil etf", "crude etf"],
+    "CL=F": ["oil", "crude", "wti", "brent proxy", "crude oil"],
+    "UNG": ["gas etf", "natural gas etf"],
+    "NG=F": ["natural gas", "natgas", "henry hub", "gas futures"],
+    "CPER": ["copper etf", "copper"],
+    "HG=F": ["copper futures", "hg"],
+    "DBA": ["agriculture", "agri", "farm commodities"],
+    "ZC=F": ["corn", "corn futures"],
+    "ZW=F": ["wheat", "wheat futures"],
+}
+
 
 def build_supported_asset_inventory() -> List[Dict[str, str]]:
     cached = asset_inventory_cache.get("supported_assets_v1")
@@ -496,6 +517,7 @@ def build_supported_asset_inventory() -> List[Dict[str, str]]:
                 "name": name,
                 "sector": sector,
                 "assetType": asset_type,
+                "aliases": ASSET_ALIASES.get(key, []),
             })
 
     add_many(correlations.POPULAR_STOCKS, "stock")
@@ -518,13 +540,49 @@ def search_stocks(q: Optional[str] = None, asset_type: Optional[str] = None):
     if q:
         q_upper = q.upper()
         q_lower = q.lower()
-        assets = [
-            a for a in assets
-            if q_upper in a["ticker"].upper()
-            or q_lower in a["name"].lower()
-            or q_lower in a["sector"].lower()
-            or q_lower in a["assetType"].lower()
-        ]
+        ranked_assets = []
+        for asset in assets:
+            score = 0
+            ticker_upper = asset["ticker"].upper()
+            name_lower = asset["name"].lower()
+            sector_lower = asset["sector"].lower()
+            asset_type_lower = asset["assetType"].lower()
+            aliases = [alias.lower() for alias in asset.get("aliases", [])]
+
+            if ticker_upper == q_upper:
+                score += 120
+            elif ticker_upper.startswith(q_upper):
+                score += 80
+            elif q_upper in ticker_upper:
+                score += 45
+
+            if name_lower == q_lower:
+                score += 100
+            elif name_lower.startswith(q_lower):
+                score += 60
+            elif q_lower in name_lower:
+                score += 35
+
+            if q_lower in sector_lower:
+                score += 20
+            if q_lower in asset_type_lower:
+                score += 15
+
+            alias_score = 0
+            for alias in aliases:
+                if alias == q_lower:
+                    alias_score = max(alias_score, 90)
+                elif alias.startswith(q_lower):
+                    alias_score = max(alias_score, 55)
+                elif q_lower in alias:
+                    alias_score = max(alias_score, 30)
+            score += alias_score
+
+            if score > 0:
+                ranked_assets.append((score, asset))
+
+        ranked_assets.sort(key=lambda item: (-item[0], item[1]["ticker"]))
+        assets = [asset for _, asset in ranked_assets]
     return assets
 
 
