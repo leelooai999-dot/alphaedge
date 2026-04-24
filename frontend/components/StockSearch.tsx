@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupportedTickers, type SupportedTicker } from "@/lib/api";
@@ -8,6 +8,8 @@ import { getSupportedTickers, type SupportedTicker } from "@/lib/api";
 interface Props {
   currentTicker?: string;
 }
+
+const QUICK_TICKERS = ["AAPL", "NVDA", "TSLA", "SPY", "QQQ", "MSFT", "META", "AMZN"];
 
 export default function StockSearch({ currentTicker }: Props) {
   const [query, setQuery] = useState(currentTicker || "");
@@ -43,6 +45,31 @@ export default function StockSearch({ currentTicker }: Props) {
     };
   }, [query]);
 
+  const quickResults = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: SupportedTicker[] = [];
+    for (const symbol of QUICK_TICKERS) {
+      const match = results.find((item) => item.ticker === symbol);
+      if (match && !seen.has(match.ticker)) {
+        seen.add(match.ticker);
+        merged.push(match);
+      }
+    }
+    for (const item of results) {
+      if (!seen.has(item.ticker)) {
+        seen.add(item.ticker);
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [results]);
+
+  const exactMatch = useMemo(() => {
+    const normalized = query.trim().toUpperCase();
+    if (!normalized) return null;
+    return quickResults.find((item) => item.ticker === normalized) || null;
+  }, [quickResults, query]);
+
   const selectTicker = (ticker: string) => {
     setQuery(ticker);
     setFocused(false);
@@ -72,28 +99,69 @@ export default function StockSearch({ currentTicker }: Props) {
 
       {focused && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-2xl max-h-96 overflow-y-auto z-[70]">
-          {results.map((t) => (
+          <div className="px-3 py-2 border-b border-border bg-bg/50">
+            <div className="flex flex-wrap gap-2">
+              {QUICK_TICKERS.map((symbol) => (
+                <button
+                  key={symbol}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectTicker(symbol)}
+                  className="px-2 py-1 text-[11px] font-mono rounded-full border border-border text-muted hover:text-white hover:border-white/20 transition-colors"
+                >
+                  {symbol}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {exactMatch && (
+            <div className="px-3 py-2 border-b border-border bg-accent/5">
+              <button
+                onClick={() => selectTicker(exactMatch.ticker)}
+                className="w-full text-left"
+              >
+                <div className="text-[11px] uppercase tracking-wide text-accent mb-1">Direct jump</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-mono font-semibold text-white text-sm">{exactMatch.ticker}</div>
+                    <div className="text-xs text-muted truncate">{exactMatch.name}</div>
+                  </div>
+                  <span className="text-[10px] text-muted border border-border rounded-full px-2 py-0.5 shrink-0">{exactMatch.sector}</span>
+                </div>
+              </button>
+            </div>
+          )}
+
+          {quickResults.map((t) => (
             <button
               key={t.ticker}
               onClick={() => selectTicker(t.ticker)}
               className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-cardHover transition-colors text-left"
             >
               <div className="min-w-0">
-                <span className="font-mono font-semibold text-white text-sm block">
-                  {t.ticker}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-semibold text-white text-sm block">
+                    {t.ticker}
+                  </span>
+                  {t.assetType && (
+                    <span className="text-[10px] text-accent border border-accent/20 bg-accent/10 rounded-full px-2 py-0.5 shrink-0">
+                      {t.assetType}
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs text-muted truncate block">{t.name}</span>
               </div>
               <span className="text-[10px] text-muted border border-border rounded-full px-2 py-0.5 ml-3 shrink-0">{t.sector}</span>
             </button>
           ))}
-          {results.length === 0 && (
+          {quickResults.length === 0 && (
             <div className="px-3 py-4 text-sm text-muted text-center">
               No results for &quot;{query}&quot;
             </div>
           )}
-          <div className="border-t border-border px-3 py-2 bg-bg/40">
-            <Link href="/tickers" className="text-xs text-accent hover:text-accent/80 no-underline">
+          <div className="border-t border-border px-3 py-2 bg-bg/40 flex items-center justify-between gap-3">
+            <span className="text-[11px] text-muted">Showing {quickResults.length} options</span>
+            <Link href="/tickers" className="text-xs text-accent hover:text-accent/80 no-underline whitespace-nowrap">
               See all tickers in Hyper Dash →
             </Link>
           </div>

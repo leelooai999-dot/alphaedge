@@ -62,6 +62,7 @@ if not allowed_origins:
         "https://frontend-leeloo-ai.vercel.app",
         "https://montecarloo.com",
         "https://www.montecarloo.com",
+        "https://frontend.montecarloo.com",
     ]
 
 app.add_middleware(
@@ -146,6 +147,8 @@ price_cache = TTLCache(default_ttl=300)
 vol_cache = TTLCache(default_ttl=1800)
 # History cache: 5 min TTL (replaces unbounded dict)
 history_cache = TTLCache(default_ttl=300)
+# Asset inventory cache: 30 min TTL
+asset_inventory_cache = TTLCache(default_ttl=1800)
 # Social caches
 feed_cache = TTLCache(default_ttl=60)  # Feed: 1 min
 leaderboard_cache = TTLCache(default_ttl=120)  # Leaderboard: 2 min
@@ -439,14 +442,90 @@ def get_event(event_id: str):
     }
 
 
+CRYPTO_SYMBOLS = [
+    ("BTC-USD", "Bitcoin", "Crypto"),
+    ("ETH-USD", "Ethereum", "Crypto"),
+    ("SOL-USD", "Solana", "Crypto"),
+    ("BNB-USD", "BNB", "Crypto"),
+    ("XRP-USD", "XRP", "Crypto"),
+    ("DOGE-USD", "Dogecoin", "Crypto"),
+    ("ADA-USD", "Cardano", "Crypto"),
+    ("AVAX-USD", "Avalanche", "Crypto"),
+    ("LINK-USD", "Chainlink", "Crypto"),
+    ("TON11419-USD", "Toncoin", "Crypto"),
+]
+
+COMMODITY_PROXY_SYMBOLS = [
+    ("GLD", "SPDR Gold Shares", "Commodity Proxy"),
+    ("SLV", "iShares Silver Trust", "Commodity Proxy"),
+    ("USO", "United States Oil Fund", "Commodity Proxy"),
+    ("UNG", "United States Natural Gas Fund", "Commodity Proxy"),
+    ("DBA", "Invesco DB Agriculture Fund", "Commodity Proxy"),
+    ("CPER", "United States Copper Index Fund", "Commodity Proxy"),
+    ("CORN", "Teucrium Corn Fund", "Commodity Proxy"),
+    ("WEAT", "Teucrium Wheat Fund", "Commodity Proxy"),
+]
+
+COMMODITY_FUTURE_SYMBOLS = [
+    ("GC=F", "Gold Futures", "Commodity Future"),
+    ("SI=F", "Silver Futures", "Commodity Future"),
+    ("CL=F", "Crude Oil Futures", "Commodity Future"),
+    ("NG=F", "Natural Gas Futures", "Commodity Future"),
+    ("HG=F", "Copper Futures", "Commodity Future"),
+    ("ZC=F", "Corn Futures", "Commodity Future"),
+    ("ZW=F", "Wheat Futures", "Commodity Future"),
+]
+
+
+def build_supported_asset_inventory() -> List[Dict[str, str]]:
+    cached = asset_inventory_cache.get("supported_assets_v1")
+    if cached is not None:
+        return cached
+
+    assets: List[Dict[str, str]] = []
+    seen = set()
+
+    def add_many(rows, asset_type: str):
+        for ticker, name, sector in rows:
+            key = ticker.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            assets.append({
+                "ticker": ticker,
+                "name": name,
+                "sector": sector,
+                "assetType": asset_type,
+            })
+
+    add_many(correlations.POPULAR_STOCKS, "stock")
+    add_many(CRYPTO_SYMBOLS, "crypto")
+    add_many(COMMODITY_PROXY_SYMBOLS, "commodity-proxy")
+    add_many(COMMODITY_FUTURE_SYMBOLS, "commodity-future")
+
+    assets.sort(key=lambda item: (item["assetType"], item["ticker"]))
+    asset_inventory_cache.set("supported_assets_v1", assets)
+    return assets
+
+
 @app.get("/api/stocks")
-def search_stocks(q: Optional[str] = None):
-    """Search stocks with optional query."""
-    stocks = correlations.POPULAR_STOCKS
+def search_stocks(q: Optional[str] = None, asset_type: Optional[str] = None):
+    """Search supported assets with optional query and asset-type filter."""
+    assets = build_supported_asset_inventory()
+    if asset_type:
+        normalized_asset_type = asset_type.strip().lower()
+        assets = [a for a in assets if a["assetType"] == normalized_asset_type]
     if q:
-        q = q.upper()
-        stocks = [s for s in stocks if q in s[0] or q in s[1].upper()]
-    return [{"ticker": t, "name": n, "sector": sec} for t, n, sec in stocks]
+        q_upper = q.upper()
+        q_lower = q.lower()
+        assets = [
+            a for a in assets
+            if q_upper in a["ticker"].upper()
+            or q_lower in a["name"].lower()
+            or q_lower in a["sector"].lower()
+            or q_lower in a["assetType"].lower()
+        ]
+    return assets
 
 
 @app.get("/api/stocks/{ticker}")
@@ -1120,7 +1199,9 @@ def register(req: RegisterRequest):
         )
         return result
     except ValueError as e:
-        raise HTTPException(409, str(e))
+        message = str(e)
+        status_code = 409 if message == "Email already registered" else 400
+        raise HTTPException(status_code, message)
     except Exception as e:
         raise HTTPException(500, f"Registration failed: {str(e)}")
 
@@ -1611,7 +1692,7 @@ def get_referral_info(user_id: str):
         referral_code = user["referral_code"] or ""
         return {
             "referral_code": referral_code,
-            "referral_link": f"https://frontend-leeloo-ai.vercel.app/?ref={referral_code}",
+            "referral_link": f"https://montecarloo.com/?ref={referral_code}",
             "referral_count": referral_count,
             "points_earned": referral_count * 50,
         }

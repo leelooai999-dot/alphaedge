@@ -6,11 +6,15 @@ export interface SupportedTicker {
   ticker: string;
   name: string;
   sector: string;
+  assetType?: string;
 }
 
-export async function getSupportedTickers(query?: string): Promise<SupportedTicker[]> {
-  const params = query ? `?q=${encodeURIComponent(query)}` : "";
-  const res = await fetch(`${API_BASE}/api/stocks${params}`);
+export async function getSupportedTickers(query?: string, assetType?: string): Promise<SupportedTicker[]> {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (assetType && assetType !== "all") params.set("asset_type", assetType);
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE}/api/stocks${qs ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error("Tickers not found");
   return res.json();
 }

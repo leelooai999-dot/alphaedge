@@ -10,6 +10,7 @@ const RECENTS_KEY = "hyperdash_recent_tickers";
 
 type ViewMode = "cards" | "compact";
 type SortMode = "ticker" | "name" | "sector";
+type AssetFilter = "all" | "stock" | "crypto" | "commodity-proxy" | "commodity-future";
 
 export default function TickersPage() {
   const [tickers, setTickers] = useState<SupportedTicker[]>([]);
@@ -19,6 +20,7 @@ export default function TickersPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("compact");
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("ticker");
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -57,9 +59,10 @@ export default function TickersPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filteredItems = tickers.filter((ticker) => {
-      const matchesQuery = !q || ticker.ticker.toLowerCase().includes(q) || ticker.name.toLowerCase().includes(q);
+      const matchesQuery = !q || ticker.ticker.toLowerCase().includes(q) || ticker.name.toLowerCase().includes(q) || (ticker.assetType || "").toLowerCase().includes(q);
       const matchesSector = sector === "all" || ticker.sector === sector;
-      return matchesQuery && matchesSector;
+      const matchesAssetType = assetFilter === "all" || ticker.assetType === assetFilter;
+      return matchesQuery && matchesSector && matchesAssetType;
     });
 
     return [...filteredItems].sort((a, b) => {
@@ -70,7 +73,7 @@ export default function TickersPage() {
       }
       return a.ticker.localeCompare(b.ticker);
     });
-  }, [tickers, query, sector, sortMode]);
+  }, [tickers, query, sector, sortMode, assetFilter]);
 
   const recentItems = useMemo(() => recentTickers.map((ticker) => tickerMap.get(ticker)).filter(Boolean) as SupportedTicker[], [recentTickers, tickerMap]);
   const quickItems = useMemo(() => QUICK_TICKERS.map((ticker) => tickerMap.get(ticker)).filter(Boolean) as SupportedTicker[], [tickerMap]);
@@ -129,7 +132,7 @@ export default function TickersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_160px_180px] gap-3 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_180px_160px_180px] gap-3 mb-6">
             <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-3">
               <svg className="w-4 h-4 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -152,6 +155,17 @@ export default function TickersPage() {
                   {option === "all" ? "All sectors" : option}
                 </option>
               ))}
+            </select>
+            <select
+              value={assetFilter}
+              onChange={(e) => setAssetFilter(e.target.value as AssetFilter)}
+              className="bg-card border border-border rounded-xl px-4 py-3 text-sm text-white outline-none"
+            >
+              <option value="all">All asset types</option>
+              <option value="stock">Stocks / ETFs</option>
+              <option value="crypto">Crypto</option>
+              <option value="commodity-proxy">Commodity proxies</option>
+              <option value="commodity-future">Commodity futures</option>
             </select>
             <select
               value={sortMode}
@@ -182,16 +196,20 @@ export default function TickersPage() {
 
           {viewMode === "compact" ? (
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
-              <div className="grid grid-cols-[120px_minmax(0,1fr)_130px_120px_120px] gap-3 px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-muted border-b border-border">
+              <div className="grid grid-cols-[120px_130px_minmax(0,1fr)_130px_120px_120px] gap-3 px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-muted border-b border-border">
                 <div>Ticker</div>
+                <div>Type</div>
                 <div>Name</div>
                 <div>Sector</div>
                 <div>Sim</div>
                 <div>Chart</div>
               </div>
               {filtered.map((ticker) => (
-                <div key={ticker.ticker} className="grid grid-cols-[120px_minmax(0,1fr)_130px_120px_120px] gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center">
+                <div key={ticker.ticker} className="grid grid-cols-[120px_130px_minmax(0,1fr)_130px_120px_120px] gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center">
                   <div className="font-mono text-sm font-bold text-white">{ticker.ticker}</div>
+                  <div>
+                    <span className="text-[11px] px-2 py-1 rounded-full bg-accent/10 text-accent border border-accent/20">{ticker.assetType || "stock"}</span>
+                  </div>
                   <div className="text-sm text-white/90 truncate">{ticker.name}</div>
                   <div>
                     <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 text-muted border border-border">{ticker.sector || "Unknown"}</span>
@@ -210,8 +228,9 @@ export default function TickersPage() {
               {filtered.map((ticker) => (
                 <div key={ticker.ticker} className="bg-card border border-border rounded-2xl p-4 flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
                       <span className="font-mono text-lg font-bold text-white">{ticker.ticker}</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">{ticker.assetType || "stock"}</span>
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-muted border border-border">{ticker.sector || "Unknown"}</span>
                     </div>
                     <p className="text-sm text-white/90 truncate">{ticker.name}</p>
